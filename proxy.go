@@ -67,6 +67,11 @@ const (
 	noThinkSwitch = "/nothink"
 )
 
+var (
+	suffixes      = []string{thinkSwitch, noThinkSwitch}
+	suffixLengths = []int{len(thinkSwitch), len(noThinkSwitch)}
+)
+
 func proxy(target *url.URL) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logger := logger.With(httplog.GetReqIDSLogAttr(r.Context()))
@@ -110,6 +115,8 @@ func proxy(target *url.URL) http.HandlerFunc {
 						http.StatusInternalServerError,
 					)
 					return
+				} else {
+					logger.Debug("forcing mode", slog.String("mode", modeNoThink.String()))
 				}
 			} else {
 				logger.Warn("unsupported content type for force no think chat completions",
@@ -128,6 +135,8 @@ func proxy(target *url.URL) http.HandlerFunc {
 						http.StatusInternalServerError,
 					)
 					return
+				} else {
+					logger.Debug("forcing mode", slog.String("mode", modeThink.String()))
 				}
 			} else {
 				logger.Warn("unsupported content type for force think chat completions",
@@ -262,6 +271,7 @@ func deepRequestInspection(body io.ReadCloser, mode mode, logger *slog.Logger) (
 		topP = noThinkTopP
 	default:
 		err = fmt.Errorf("unknown DPI mode: %v", mode)
+		return
 	}
 	applySamplingParams(data, temperature, topP, logger)
 	// Marshal the body back to JSON
@@ -274,8 +284,47 @@ func deepRequestInspection(body io.ReadCloser, mode mode, logger *slog.Logger) (
 }
 
 func detector(messages []any) (detectedMode mode, err error) {
-	// TODO
+	for i := len(messages) - 1; i >= 0; i-- {
+		message, ok := messages[i].(map[string]any)
+		if !ok {
+			err = fmt.Errorf("message at index %d is not a map: %T", i, messages[i])
+			return
+		}
+		content, ok := message["content"]
+		if !ok {
+			err = errors.New("last message does not contain 'content' key")
+			return
+		}
+		typedContent, ok := content.(string)
+		if !ok {
+			err = fmt.Errorf("'content' key is not a string: %T", content)
+			return
+		}
+		switch checkTextSwitch(typedContent) {
+		case thinkSwitch:
+			detectedMode = modeThink
+			return
+		case noThinkSwitch:
+			detectedMode = modeNoThink
+			return
+		default:
+			// continue searching
+		}
+	}
 	return
+}
+
+func checkTextSwitch(input string) string {
+	for i := len(input) - 1; i >= 0; i-- {
+		for j, suffix := range suffixes {
+			if i >= suffixLengths[j]-1 {
+				if input[i-suffixLengths[j]+1:i+1] == suffix {
+					return suffix
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func force(messages []any, think bool) (err error) {
