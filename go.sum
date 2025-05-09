@@ -1,0 +1,11 @@
+github.com/hekmon/httplog/v2 v2.0.2 h1:gPJjIY2bKhCvyas4zOST/vZESQ6YCUZhk9vInxCD2QU=
+github.com/hekmon/httplog/v2 v2.0.2/go.mod h1:nTOfyGCGF5JdVmoP2KxBe3qfmtys+wGtxKHwEEOu584=
+github.com/iguanesolutions/auto-slog v1.0.0 h1:I44+ZzYe9p27X+ZmycNCAq+o/xBo8gptNszN4cwDz/Q=
+github.com/iguanesolutions/auto-slog v1.0.0/go.mod h1:fKE09O0vrDS8TBuRhjBUt7YsN9nIfqE2uFGCdOV5Gq8=
+github.com/iguanesolutions/go-systemd/v5 v5.2.0 h1:U+RC/B49CQWTwqGjLIbWac8oDVQaogJ+omBATFnGzq4=
+github.com/iguanesolutions/go-systemd/v5 v5.2.0/go.mod h1:ZbUvqK5nsONHHP7FpTCv3/2apCZQPd3p0bGX9aH2nrM=
+github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=
+github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
+golang.org/x/sys v0.6.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+golang.org/x/sys v0.33.0 h1:q3i8TbbEz+JRD9ywIRlyRAQbM0qF7hu24q3teo2hbuw=
+golang.org/x/sys v0.33.0/go.mod h1:BJP2sWEmIv4KK5OTEluFJCKSidICx8ciO85XgH3Ak8k=
