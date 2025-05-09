@@ -238,29 +238,66 @@ func deepRequestInspection(body io.ReadCloser, mode mode, logger *slog.Logger) (
 		err = errors.New("'messages' slice is empty")
 		return
 	}
+	if detectedMode, err = detector(typedMessages); err != nil {
+		err = fmt.Errorf("failed to detect mode by inspecting messages: %w", err)
+		return
+	}
 	switch mode {
 	case modeAuto:
+		// request came thru the regular endpoint...
 		if detectedMode, err = detector(typedMessages); err != nil {
 			err = fmt.Errorf("failed to detect mode by inspecting messages: %w", err)
 			return
 		}
 		switch detectedMode {
-		case modeAuto, modeThink:
+		case modeAuto:
+			// ... and no switches were detected, do nothing
+			newBody = io.NopCloser(bytes.NewBuffer(raw))
+			return
+		case modeThink:
+			// ... but an ending thinking switch was detected, update the mode accordingly
 			mode = modeThink
 		case modeNoThink:
+			// ... but an ending no-thinking switch was detected, update the mode accordingly
 			mode = modeNoThink
 		default:
 			err = fmt.Errorf("unknown detected mode: %v", detectedMode)
 			return
 		}
 	case modeThink:
-		if err = force(typedMessages, true); err != nil {
-			err = fmt.Errorf("failed to force messages for thinking mode: %w", err)
+		// request came thru the thinking endpoint...
+		switch detectedMode {
+		case modeThink:
+			// ... and an ending thinking switch was detected, do not edit last message
+		case modeAuto:
+			// ... but no switches were detected, forcing
+			fallthrough
+		case modeNoThink:
+			// ... but an ending no-thinking switch was detected, forcing
+			if err = force(typedMessages, true); err != nil {
+				err = fmt.Errorf("failed to force messages for thinking mode: %w", err)
+				return
+			}
+		default:
+			err = fmt.Errorf("unknown detected mode: %v", detectedMode)
 			return
 		}
 	case modeNoThink:
-		if err = force(typedMessages, false); err != nil {
-			err = fmt.Errorf("failed to force messages for no-thinking mode: %w", err)
+		// request came thru the no-thinking endpoint...
+		switch detectedMode {
+		case modeNoThink:
+			// ... and an ending no-thinking switch was detected, do not edit last message
+		case modeAuto:
+			// ... but no switches were detected, forcing
+			fallthrough
+		case modeThink:
+			// ... but an ending thinking switch was detected, forcing
+			if err = force(typedMessages, false); err != nil {
+				err = fmt.Errorf("failed to force messages for no-thinking mode: %w", err)
+				return
+			}
+		default:
+			err = fmt.Errorf("unknown detected mode: %v", detectedMode)
 			return
 		}
 	default:
@@ -277,7 +314,7 @@ func deepRequestInspection(body io.ReadCloser, mode mode, logger *slog.Logger) (
 		temperature = noThinkTemperature
 		topP = noThinkTopP
 	default:
-		err = fmt.Errorf("unknown DPI mode: %v", mode)
+		err = fmt.Errorf("can not set sampling parameters for unknown mode: %v", mode)
 		return
 	}
 	applySamplingParams(data, temperature, topP, logger)
@@ -351,9 +388,9 @@ func force(messages []any, think bool) (err error) {
 		return
 	}
 	if think {
-		typedContent += "\n" + thinkSwitch
+		typedContent += " " + thinkSwitch
 	} else {
-		typedContent += "\n" + noThinkSwitch
+		typedContent += " " + noThinkSwitch
 	}
 	firstMessage["content"] = typedContent
 	messages[len(messages)-1] = firstMessage
