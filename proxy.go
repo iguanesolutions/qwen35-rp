@@ -82,6 +82,7 @@ func proxy(target *url.URL) http.HandlerFunc {
 		)
 		var err error
 		// Inspect and modify body if necessary
+		var targetPath string
 		switch r.URL.Path {
 		case chatCompletionsURI:
 			// detect mode
@@ -96,7 +97,7 @@ func proxy(target *url.URL) http.HandlerFunc {
 					)
 					return
 				} else {
-					logger.Debug("detected mode", slog.String("mode", detectedMode.String()))
+					logger.Info("detected mode", slog.String("mode", detectedMode.String()))
 				}
 			} else {
 				logger.Warn("unsupported content type for automatic chat completions",
@@ -104,6 +105,7 @@ func proxy(target *url.URL) http.HandlerFunc {
 					slog.String("expected_prefix", MIMETypeApplicationJSON),
 				)
 			}
+			targetPath = chatCompletionsURI
 		case noThinkChatCompletionsURI:
 			// force nothink
 			if strings.HasPrefix(r.Header.Get(contentTypeHeader), MIMETypeApplicationJSON) {
@@ -116,7 +118,7 @@ func proxy(target *url.URL) http.HandlerFunc {
 					)
 					return
 				} else {
-					logger.Debug("forcing mode", slog.String("mode", modeNoThink.String()))
+					logger.Info("forcing mode", slog.String("mode", modeNoThink.String()))
 				}
 			} else {
 				logger.Warn("unsupported content type for force no think chat completions",
@@ -124,6 +126,7 @@ func proxy(target *url.URL) http.HandlerFunc {
 					slog.String("expected_prefix", MIMETypeApplicationJSON),
 				)
 			}
+			targetPath = chatCompletionsURI
 		case thinkChatCompletionsURI:
 			// force think
 			if strings.HasPrefix(r.Header.Get(contentTypeHeader), MIMETypeApplicationJSON) {
@@ -136,7 +139,7 @@ func proxy(target *url.URL) http.HandlerFunc {
 					)
 					return
 				} else {
-					logger.Debug("forcing mode", slog.String("mode", modeThink.String()))
+					logger.Info("forcing mode", slog.String("mode", modeThink.String()))
 				}
 			} else {
 				logger.Warn("unsupported content type for force think chat completions",
@@ -144,10 +147,14 @@ func proxy(target *url.URL) http.HandlerFunc {
 					slog.String("expected_prefix", MIMETypeApplicationJSON),
 				)
 			}
+			targetPath = chatCompletionsURI
+		default:
+			targetPath = r.URL.Path
+			logger.Debug("proxying request without modification")
 		}
 		// Create the upstream request
 		upstreamURL := *target
-		upstreamURL.Path = path.Join(target.Path, r.URL.Path)
+		upstreamURL.Path = path.Join(target.Path, targetPath)
 		upstreamURL.RawQuery = r.URL.RawQuery
 		upstreamReq, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL.String(), r.Body)
 		if err != nil {
@@ -358,7 +365,7 @@ func applySamplingParams(data map[string]any, temperature, topP float64, logger 
 	if _, exists := data[maxTokensKey]; !exists {
 		data[maxTokensKey] = maxTokens
 	} else {
-		logger.Warn("max_tokens already set in request, not modifying",
+		logger.Debug("max_tokens already set in request, not modifying",
 			slog.Any("value", data[maxTokensKey]),
 			slog.Float64("default_value", maxTokens),
 		)
@@ -367,7 +374,7 @@ func applySamplingParams(data map[string]any, temperature, topP float64, logger 
 	if _, exists := data[temperatureKey]; !exists {
 		data[temperatureKey] = temperature
 	} else {
-		logger.Warn("temperature already set in request, not modifying",
+		logger.Debug("temperature already set in request, not modifying",
 			slog.Any("value", data[temperatureKey]),
 			slog.Float64("default_value", temperature),
 		)
@@ -376,7 +383,7 @@ func applySamplingParams(data map[string]any, temperature, topP float64, logger 
 	if _, exists := data[topPKey]; !exists {
 		data[topPKey] = topP
 	} else {
-		logger.Warn("top_p already set in request, not modifying",
+		logger.Debug("top_p already set in request, not modifying",
 			slog.Any("value", data[topPKey]),
 			slog.Float64("default_value", topP),
 		)
@@ -385,7 +392,7 @@ func applySamplingParams(data map[string]any, temperature, topP float64, logger 
 	if _, exists := data[topKKey]; !exists {
 		data[topKKey] = TopK
 	} else {
-		logger.Warn("top_k already set in request, not modifying",
+		logger.Debug("top_k already set in request, not modifying",
 			slog.Any("value", data[topKKey]),
 			slog.Int("default_value", TopK),
 		)
@@ -394,7 +401,7 @@ func applySamplingParams(data map[string]any, temperature, topP float64, logger 
 	if _, exists := data[minPKey]; !exists {
 		data[minPKey] = minP
 	} else {
-		logger.Warn("min_p already set in request, not modifying",
+		logger.Debug("min_p already set in request, not modifying",
 			slog.Any("value", data[minPKey]),
 			slog.Float64("default_value", minP),
 		)
@@ -403,7 +410,7 @@ func applySamplingParams(data map[string]any, temperature, topP float64, logger 
 	if _, exists := data[presencePenaltyKey]; !exists {
 		data[presencePenaltyKey] = presencePenalty
 	} else {
-		logger.Warn("presence_penalty already set in request, not modifying",
+		logger.Debug("presence_penalty already set in request, not modifying",
 			slog.Any("value", data[presencePenaltyKey]),
 			slog.Float64("default_value", presencePenalty),
 		)

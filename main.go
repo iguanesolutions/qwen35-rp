@@ -33,7 +33,7 @@ func main() {
 	// Flags
 	listen := flag.String("listen", "0.0.0.0", "IP address to listen on")
 	port := flag.Int("port", 9000, "Port to listen on")
-	target := flag.String("target", "http://127.0.0.1:4000/v1", "Backend target, default is for a local vLLM")
+	target := flag.String("target", "http://127.0.0.1:8000/v1", "Backend target, default is for a local vLLM")
 	loglevel := flag.String("loglevel", slog.LevelInfo.String(), fmt.Sprintf("Valid log levels: %s, %s, %s, %s",
 		slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError))
 	version := flag.Bool("version", false, "Print version and exit")
@@ -77,6 +77,7 @@ func main() {
 	logger.Info("starting reverse proxy server",
 		slog.String("listen", *listen),
 		slog.Int("port", *port),
+		slog.String("target", backend.String()),
 	)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Error("failed to start HTTP server", "err", err)
