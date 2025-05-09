@@ -205,14 +205,14 @@ func generateErrorClientText(ctx context.Context, statusCode int) string {
 
 func deepRequestInspection(body io.ReadCloser, mode mode, logger *slog.Logger) (newBody io.ReadCloser, detectedMode mode, err error) {
 	// Read the body
-	buf, err := io.ReadAll(body)
+	raw, err := io.ReadAll(body)
 	if err != nil {
 		err = fmt.Errorf("failed to read body: %w", err)
 		return
 	}
 	// Parse the body as JSON
 	var data map[string]any
-	if err = json.Unmarshal(buf, &data); err != nil {
+	if err = json.Unmarshal(raw, &data); err != nil {
 		err = fmt.Errorf("failed to parse body as JSON: %w", err)
 		return
 	}
@@ -275,11 +275,11 @@ func deepRequestInspection(body io.ReadCloser, mode mode, logger *slog.Logger) (
 	}
 	applySamplingParams(data, temperature, topP, logger)
 	// Marshal the body back to JSON
-	if buf, err = json.Marshal(data); err != nil {
+	if raw, err = json.Marshal(data); err != nil {
 		err = fmt.Errorf("failed to marshal body back to JSON: %w", err)
 		return
 	}
-	newBody = io.NopCloser(bytes.NewBuffer(buf))
+	newBody = io.NopCloser(bytes.NewBuffer(raw))
 	return
 }
 
