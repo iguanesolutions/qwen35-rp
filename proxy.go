@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	chatCompletionsURI        = "/chat/completions"         // Path to intercept for chat completions
-	noThinkChatCompletionsURI = "/nothink/chat/completions" // Path to intercept for forced nothink chat completions
-	thinkChatCompletionsURI   = "/think/chat/completions"   // Path to intercept for forced think chat completions
+	chatCompletionsURI        = "/v1/chat/completions"         // Path to intercept for chat completions
+	noThinkChatCompletionsURI = "/nothink/v1/chat/completions" // Path to intercept for forced nothink chat completions
+	thinkChatCompletionsURI   = "/think/v1/chat/completions"   // Path to intercept for forced think chat completions
 
 	contentTypeHeader       = "Content-Type"     // Header key for content type
 	MIMETypeApplicationJSON = "application/json" // Value for JSON content type
