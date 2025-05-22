@@ -1,5 +1,5 @@
-github.com/hekmon/httplog/v2 v2.0.2 h1:gPJjIY2bKhCvyas4zOST/vZESQ6YCUZhk9vInxCD2QU=
-github.com/hekmon/httplog/v2 v2.0.2/go.mod h1:nTOfyGCGF5JdVmoP2KxBe3qfmtys+wGtxKHwEEOu584=
+github.com/hekmon/httplog/v2 v2.0.3 h1:yER17Jn/q9jTYWSBMdj2lW8qq0VO8MUorUw2dRbBqNY=
+github.com/hekmon/httplog/v2 v2.0.3/go.mod h1:nTOfyGCGF5JdVmoP2KxBe3qfmtys+wGtxKHwEEOu584=
 github.com/iguanesolutions/auto-slog v1.0.0 h1:I44+ZzYe9p27X+ZmycNCAq+o/xBo8gptNszN4cwDz/Q=
 github.com/iguanesolutions/auto-slog v1.0.0/go.mod h1:fKE09O0vrDS8TBuRhjBUt7YsN9nIfqE2uFGCdOV5Gq8=
 github.com/iguanesolutions/go-systemd/v5 v5.2.0 h1:U+RC/B49CQWTwqGjLIbWac8oDVQaogJ+omBATFnGzq4=

@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	chatCompletionsURI        = "/v1/chat/completions"         // Path to intercept for chat completions
-	noThinkChatCompletionsURI = "/nothink/v1/chat/completions" // Path to intercept for forced nothink chat completions
-	thinkChatCompletionsURI   = "/think/v1/chat/completions"   // Path to intercept for forced think chat completions
+	chatCompletionsURI        = "/v1/chat/completions"          // Path to intercept for chat completions
+	noThinkChatCompletionsURI = "/nothink" + chatCompletionsURI // Path to intercept for forced nothink chat completions
+	thinkChatCompletionsURI   = "/think" + chatCompletionsURI   // Path to intercept for forced think chat completions
 
 	contentTypeHeader       = "Content-Type"     // Header key for content type
 	MIMETypeApplicationJSON = "application/json" // Value for JSON content type
@@ -196,26 +196,8 @@ func proxy(target *url.URL) http.HandlerFunc {
 			}
 		}
 		w.WriteHeader(upstreamAnswer.StatusCode)
-		var n int
-		buff := make([]byte, 1)
-		for err != nil {
-			if n, err = upstreamAnswer.Body.Read(buff); err != nil {
-				err = fmt.Errorf("failed to read upstream response body: %w", err)
-				break
-			}
-			if n > 0 {
-				if _, err = w.Write(buff[:n]); err != nil {
-					err = fmt.Errorf("failed to write upstream response to client response: %w", err)
-					break
-				}
-			}
-		}
-		if err != nil {
-			if err == io.EOF {
-				err = nil
-			} else {
-				logger.Error("failed to stream back response", slog.String("error", err.Error()))
-			}
+		if _, err = io.Copy(w, upstreamAnswer.Body); err != nil {
+			logger.Error("failed to stream back response", slog.String("error", err.Error()))
 		}
 	}
 }
