@@ -203,7 +203,7 @@ func proxy(target *url.URL) http.HandlerFunc {
 }
 
 func generateErrorClientText(ctx context.Context, statusCode int) string {
-	return fmt.Sprintf("%s - check vllmsoi logs for more details (request id #%v)",
+	return fmt.Sprintf("%s - check qwen3-rp logs for more details (request id #%v)",
 		http.StatusText(statusCode),
 		ctx.Value(httplog.ReqIDKey),
 	)
