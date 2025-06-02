@@ -11,7 +11,7 @@ ADD . /build
 RUN go build -v -trimpath -ldflags "-s -w" -o qwen3-rp .
 
 FROM ${app_image}:${app_tag}
-RUN apt update && apt install -y ca-certificates curl ffmpeg
+RUN apt update && apt install -y ca-certificates curl
 COPY --from=go_build /build/qwen3-rp /usr/bin/qwen3-rp
 
 EXPOSE 9000
