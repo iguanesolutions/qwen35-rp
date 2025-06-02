@@ -7,6 +7,7 @@ ARG app_tag=bookworm-slim
 FROM ${go_build_image}:${go_build_tag} AS go_build
 RUN mkdir -p /build
 WORKDIR /build
+ADD . /build
 RUN go build -v -trimpath -ldflags "-s -w" -o qwen3-rp .
 
 FROM ${app_image}:${app_tag}
