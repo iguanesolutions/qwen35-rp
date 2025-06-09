@@ -244,10 +244,6 @@ func deepRequestInspection(body io.ReadCloser, mode mode, logger *slog.Logger) (
 	switch mode {
 	case modeAuto:
 		// request came thru the regular endpoint...
-		if detectedMode, err = detector(typedMessages, logger); err != nil {
-			err = fmt.Errorf("failed to detect mode by inspecting messages: %w", err)
-			return
-		}
 		switch detectedMode {
 		case modeAuto:
 			// ... and no switches were detected, do nothing
