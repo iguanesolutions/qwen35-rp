@@ -237,17 +237,13 @@ func deepRequestInspection(body io.ReadCloser, mode mode, logger *slog.Logger) (
 		err = errors.New("'messages' slice is empty")
 		return
 	}
-	if detectedMode, err = detector(typedMessages); err != nil {
+	if detectedMode, err = detector(typedMessages, logger); err != nil {
 		err = fmt.Errorf("failed to detect mode by inspecting messages: %w", err)
 		return
 	}
 	switch mode {
 	case modeAuto:
 		// request came thru the regular endpoint...
-		if detectedMode, err = detector(typedMessages); err != nil {
-			err = fmt.Errorf("failed to detect mode by inspecting messages: %w", err)
-			return
-		}
 		switch detectedMode {
 		case modeAuto:
 			// ... and no switches were detected, do nothing
@@ -326,7 +322,8 @@ func deepRequestInspection(body io.ReadCloser, mode mode, logger *slog.Logger) (
 	return
 }
 
-func detector(messages []any) (detectedMode mode, err error) {
+func detector(messages []any, logger *slog.Logger) (detectedMode mode, err error) {
+	messagesLen := len(messages)
 	for i := len(messages) - 1; i >= 0; i-- {
 		message, ok := messages[i].(map[string]any)
 		if !ok {
@@ -335,8 +332,8 @@ func detector(messages []any) (detectedMode mode, err error) {
 		}
 		content, ok := message["content"]
 		if !ok {
-			err = errors.New("last message does not contain 'content' key")
-			return
+			logger.Info("the message does not contain 'content' key", "index", i, "len", messagesLen)
+			continue
 		}
 		typedContent, ok := content.(string)
 		if !ok {
@@ -354,6 +351,7 @@ func detector(messages []any) (detectedMode mode, err error) {
 			// continue searching
 		}
 	}
+	err = fmt.Errorf("failed to detect thinking mode in messages")
 	return
 }
 
