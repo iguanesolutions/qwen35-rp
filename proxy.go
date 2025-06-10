@@ -351,7 +351,6 @@ func detector(messages []any, logger *slog.Logger) (detectedMode mode, err error
 			// continue searching
 		}
 	}
-	err = fmt.Errorf("failed to detect thinking mode in messages")
 	return
 }
 
