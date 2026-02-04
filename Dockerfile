@@ -8,12 +8,12 @@ FROM ${go_build_image}:${go_build_tag} AS go_build
 RUN mkdir -p /build
 WORKDIR /build
 ADD . /build
-RUN go build -v -trimpath -ldflags "-s -w" -o qwen3-rp .
+RUN go build -v -trimpath -ldflags "-s -w" -o kimi-rp .
 
 FROM ${app_image}:${app_tag}
 RUN apt update && apt install -y ca-certificates curl
-COPY --from=go_build /build/qwen3-rp /usr/bin/qwen3-rp
+COPY --from=go_build /build/kimi-rp /usr/bin/kimi-rp
 
 EXPOSE 9000
 
-ENTRYPOINT ["/usr/bin/qwen3-rp"]
+ENTRYPOINT ["/usr/bin/kimi-rp"]

@@ -24,7 +24,7 @@ jobs:
         env:
           REGISTRY: ${{ steps.login-ecr-public.outputs.registry }}
           REGISTRY_ALIAS: ${{ secrets.AWS_ECR_REGISTRY_ALIAS }}
-          REPOSITORY: qwen3-rp
+          REPOSITORY: kimi-rp
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build -t $REGISTRY/$REGISTRY_ALIAS/$REPOSITORY:$IMAGE_TAG .

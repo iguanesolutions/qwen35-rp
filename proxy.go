@@ -53,14 +53,6 @@ const (
 	noThinkTemperature = 0.6
 	topPKey            = "top_p"
 	topP               = 0.95
-
-	thinkSwitch   = "/think"
-	noThinkSwitch = "/nothink"
-)
-
-var (
-	suffixes      = []string{thinkSwitch, noThinkSwitch}
-	suffixLengths = []int{len(thinkSwitch), len(noThinkSwitch)}
 )
 
 func proxy(target *url.URL) http.HandlerFunc {
@@ -194,7 +186,7 @@ func proxy(target *url.URL) http.HandlerFunc {
 }
 
 func generateErrorClientText(ctx context.Context, statusCode int) string {
-	return fmt.Sprintf("%s - check qwen3-rp logs for more details (request id #%v)",
+	return fmt.Sprintf("%s - check kimi-rp logs for more details (request id #%v)",
 		http.StatusText(statusCode),
 		ctx.Value(httplog.ReqIDKey),
 	)
@@ -213,23 +205,8 @@ func deepRequestInspection(body io.ReadCloser, mode mode, logger *slog.Logger) (
 		err = fmt.Errorf("failed to parse body as JSON: %w", err)
 		return
 	}
-	// Handles messages
-	messages, ok := data["messages"]
-	if !ok {
-		err = errors.New("chat completion body does not contain 'messages' key")
-		return
-	}
-	typedMessages, ok := messages.([]any)
-	if !ok {
-		err = fmt.Errorf("'messages' key is not a slice: %T", messages)
-		return
-	}
-	if len(typedMessages) == 0 {
-		err = errors.New("'messages' slice is empty")
-		return
-	}
-	if detectedMode, err = detector(typedMessages, logger); err != nil {
-		err = fmt.Errorf("failed to detect mode by inspecting messages: %w", err)
+	if detectedMode, err = detector(data); err != nil {
+		err = fmt.Errorf("failed to detect mode by inspecting body: %w", err)
 		return
 	}
 	switch mode {
@@ -260,8 +237,8 @@ func deepRequestInspection(body io.ReadCloser, mode mode, logger *slog.Logger) (
 			fallthrough
 		case modeNoThink:
 			// ... but an ending no-thinking switch was detected, forcing
-			if err = force(typedMessages, true); err != nil {
-				err = fmt.Errorf("failed to force messages for thinking mode: %w", err)
+			if err = force(data, true); err != nil {
+				err = fmt.Errorf("failed to force thinking mode: %w", err)
 				return
 			}
 		default:
@@ -278,8 +255,8 @@ func deepRequestInspection(body io.ReadCloser, mode mode, logger *slog.Logger) (
 			fallthrough
 		case modeThink:
 			// ... but an ending thinking switch was detected, forcing
-			if err = force(typedMessages, false); err != nil {
-				err = fmt.Errorf("failed to force messages for no-thinking mode: %w", err)
+			if err = force(data, false); err != nil {
+				err = fmt.Errorf("failed to force no-thinking mode: %w", err)
 				return
 			}
 		default:
@@ -311,74 +288,38 @@ func deepRequestInspection(body io.ReadCloser, mode mode, logger *slog.Logger) (
 	return
 }
 
-func detector(messages []any, logger *slog.Logger) (detectedMode mode, err error) {
-	messagesLen := len(messages)
-	for i := len(messages) - 1; i >= 0; i-- {
-		message, ok := messages[i].(map[string]any)
+func detector(data map[string]any) (detectedMode mode, err error) {
+	detectedMode = modeAuto
+	extraBody, ok := data["extra_body"]
+	if ok {
+		extraBodyMap, ok := extraBody.(map[string]any)
 		if !ok {
-			err = fmt.Errorf("message at index %d is not a map: %T", i, messages[i])
+			err = fmt.Errorf("extra_body is not a map[string]any")
 			return
 		}
-		content, ok := message["content"]
-		if !ok {
-			logger.Info("the message does not contain 'content' key", "index", i, "len", messagesLen)
-			continue
-		}
-		typedContent, ok := content.(string)
-		if !ok {
-			err = fmt.Errorf("'content' key is not a string: %T", content)
-			return
-		}
-		switch checkTextSwitch(typedContent) {
-		case thinkSwitch:
-			detectedMode = modeThink
-			return
-		case noThinkSwitch:
-			detectedMode = modeNoThink
-			return
-		default:
-			// continue searching
+		if think, ok := extraBodyMap["thinking"]; ok {
+			if b, ok := think.(bool); ok && b {
+				detectedMode = modeThink
+			} else {
+				detectedMode = modeNoThink
+			}
 		}
 	}
 	return
 }
 
-func checkTextSwitch(input string) string {
-	for i := len(input) - 1; i >= 0; i-- {
-		for j, suffix := range suffixes {
-			if i >= suffixLengths[j]-1 {
-				if input[i-suffixLengths[j]+1:i+1] == suffix {
-					return suffix
-				}
-			}
+func force(data map[string]any, think bool) (err error) {
+	extraBody, ok := data["extra_body"]
+	if ok {
+		extraBodyMap, ok := extraBody.(map[string]any)
+		if !ok {
+			err = fmt.Errorf("extra_body is not a map[string]any")
+			return
 		}
-	}
-	return ""
-}
-
-func force(messages []any, think bool) (err error) {
-	firstMessage, ok := messages[len(messages)-1].(map[string]any)
-	if !ok {
-		err = fmt.Errorf("last message is not a map: %T", messages[len(messages)-1])
-		return
-	}
-	content, ok := firstMessage["content"]
-	if !ok {
-		err = errors.New("last message does not contain 'content' key")
-		return
-	}
-	typedContent, ok := content.(string)
-	if !ok {
-		err = fmt.Errorf("'content' key is not a string: %T", content)
-		return
-	}
-	if think {
-		typedContent += " " + thinkSwitch
+		extraBodyMap["thinking"] = think
 	} else {
-		typedContent += " " + noThinkSwitch
+		data["extra_body"] = map[string]any{"thinking": think}
 	}
-	firstMessage["content"] = typedContent
-	messages[len(messages)-1] = firstMessage
 	return
 }
 
