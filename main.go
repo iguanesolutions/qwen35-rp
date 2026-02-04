@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
+	"log"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -25,29 +25,17 @@ const (
 var (
 	logger           *slog.Logger
 	modifiedRequests atomic.Int64
-	// overrided with build script
-	Version = "dev"
 )
 
 func main() {
-	// Flags
-	listen := flag.String("listen", "0.0.0.0", "IP address to listen on")
-	port := flag.Int("port", 9000, "Port to listen on")
-	target := flag.String("target", "http://127.0.0.1:8000", "Backend target, default is for a local vLLM")
-	loglevel := flag.String("loglevel", slog.LevelInfo.String(), fmt.Sprintf("Valid log levels: %s, %s, %s, %s",
-		slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError))
-	version := flag.Bool("version", false, "Print version and exit")
-	flag.Parse()
-
-	// Special case
-	if *version {
-		fmt.Println("Version:", Version)
-		os.Exit(0)
+	cfg, err := LoadConfig()
+	if err != nil {
+		log.Fatalf("load config: %s\n", err)
 	}
 
 	// Init
-	logger = autoslog.NewLogger(autoslog.LogLevel(*loglevel))
-	backend, err := url.Parse(*target)
+	logger = autoslog.NewLogger(autoslog.LogLevel(cfg.LogLevel))
+	backendURL, err := url.Parse(cfg.Target)
 	if err != nil {
 		logger.Error("failed to parse backend URL", slog.Any("error", err))
 		os.Exit(1)
@@ -55,10 +43,10 @@ func main() {
 
 	// Define HTTP handlers and middleware
 	httplogger := httplog.New(logger)
-	http.HandleFunc("/", httplogger.LogFunc(proxy(backend)))
+	http.HandleFunc("/", httplogger.LogFunc(proxy(backendURL, cfg.ThinkingModelName, cfg.NoThinkingModelName)))
 
 	// Prepare HTTP server and clean stop
-	server := &http.Server{Addr: fmt.Sprintf("%s:%d", *listen, *port)}
+	server := &http.Server{Addr: fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)}
 	signalStopCtx, signalStopCtxCancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Interrupt)
 	defer signalStopCtxCancel()
 	go cleanStop(signalStopCtx, server)
@@ -75,9 +63,9 @@ func main() {
 
 	// Start server
 	logger.Info("starting reverse proxy server",
-		slog.String("listen", *listen),
-		slog.Int("port", *port),
-		slog.String("target", backend.String()),
+		slog.String("listen", cfg.Listen),
+		slog.Int("port", cfg.Port),
+		slog.String("target", backendURL.String()),
 	)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Error("failed to start HTTP server", "err", err)
