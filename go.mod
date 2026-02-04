@@ -3,6 +3,7 @@ module github.com/iguanesolutions/kimi-rp
 go 1.24.2
 
 require (
+	github.com/hashicorp/go-cleanhttp v0.5.2
 	github.com/hekmon/httplog/v2 v2.0.3
 	github.com/iguanesolutions/auto-slog v1.0.0
 	github.com/iguanesolutions/go-systemd/v5 v5.2.0
