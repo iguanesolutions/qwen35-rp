@@ -48,20 +48,11 @@ func (m mode) String() string {
 }
 
 const (
-	maxTokensKey       = "max_tokens"
-	maxTokens          = 8192
 	temperatureKey     = "temperature"
-	thinkTemperature   = 0.6
-	noThinkTemperature = 0.7
+	thinkTemperature   = 1.0
+	noThinkTemperature = 0.6
 	topPKey            = "top_p"
-	thinkTopP          = 0.95
-	noThinkTopP        = 0.8
-	topKKey            = "top_k"
-	TopK               = 20
-	minPKey            = "min_p"
-	minP               = 0.0
-	presencePenaltyKey = "presence_penalty"
-	presencePenalty    = 1.5
+	topP               = 0.95
 
 	thinkSwitch   = "/think"
 	noThinkSwitch = "/nothink"
@@ -300,14 +291,12 @@ func deepRequestInspection(body io.ReadCloser, mode mode, logger *slog.Logger) (
 		return
 	}
 	// Set sampling parameters according to mode
-	var temperature, topP float64
+	var temperature float64
 	switch mode {
 	case modeThink:
 		temperature = thinkTemperature
-		topP = thinkTopP
 	case modeNoThink:
 		temperature = noThinkTemperature
-		topP = noThinkTopP
 	default:
 		err = fmt.Errorf("can not set sampling parameters for unknown mode: %v", mode)
 		return
@@ -394,15 +383,6 @@ func force(messages []any, think bool) (err error) {
 }
 
 func applySamplingParams(data map[string]any, temperature, topP float64, logger *slog.Logger) {
-	// Max Tokens
-	if _, exists := data[maxTokensKey]; !exists {
-		data[maxTokensKey] = maxTokens
-	} else {
-		logger.Debug("max_tokens already set in request, not modifying",
-			slog.Any("value", data[maxTokensKey]),
-			slog.Float64("default_value", maxTokens),
-		)
-	}
 	// Temperature
 	if _, exists := data[temperatureKey]; !exists {
 		data[temperatureKey] = temperature
@@ -419,33 +399,6 @@ func applySamplingParams(data map[string]any, temperature, topP float64, logger 
 		logger.Debug("top_p already set in request, not modifying",
 			slog.Any("value", data[topPKey]),
 			slog.Float64("default_value", topP),
-		)
-	}
-	// Top K
-	if _, exists := data[topKKey]; !exists {
-		data[topKKey] = TopK
-	} else {
-		logger.Debug("top_k already set in request, not modifying",
-			slog.Any("value", data[topKKey]),
-			slog.Int("default_value", TopK),
-		)
-	}
-	// Min P
-	if _, exists := data[minPKey]; !exists {
-		data[minPKey] = minP
-	} else {
-		logger.Debug("min_p already set in request, not modifying",
-			slog.Any("value", data[minPKey]),
-			slog.Float64("default_value", minP),
-		)
-	}
-	// Presence Penalty
-	if _, exists := data[presencePenaltyKey]; !exists {
-		data[presencePenaltyKey] = presencePenalty
-	} else {
-		logger.Debug("presence_penalty already set in request, not modifying",
-			slog.Any("value", data[presencePenaltyKey]),
-			slog.Float64("default_value", presencePenalty),
 		)
 	}
 }
