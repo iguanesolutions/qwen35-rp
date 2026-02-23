@@ -43,7 +43,8 @@ func main() {
 
 	// Define HTTP handlers and middleware
 	httplogger := httplog.New(logger)
-	http.HandleFunc("/", httplogger.LogFunc(proxy(backendURL, cfg.ThinkingModelName, cfg.NoThinkingModelName)))
+	http.HandleFunc("/", httplogger.LogFunc(proxy(backendURL,
+		cfg.ServedModelName, cfg.ThinkingModelName, cfg.NoThinkingModelName)))
 
 	// Prepare HTTP server and clean stop
 	server := &http.Server{Addr: fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)}

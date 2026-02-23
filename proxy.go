@@ -27,7 +27,8 @@ const (
 	topP               = 0.95
 )
 
-func proxy(target *url.URL, thinkingModel, noThinkingModel string) http.HandlerFunc {
+func proxy(target *url.URL,
+	servedModel, thinkingModel, noThinkingModel string) http.HandlerFunc {
 	// pooled client
 	httpCli := &http.Client{
 		Transport: &http.Transport{
@@ -86,18 +87,21 @@ func proxy(target *url.URL, thinkingModel, noThinkingModel string) http.HandlerF
 			httpError(ctx, w, http.StatusBadRequest)
 			return
 		}
+		// override model name
+		data["model"] = servedModel
 		// set thinking extra body parameter
-		extraBody, ok := data["extra_body"]
+		kwargs, ok := data["chat_template_kwargs"]
 		if ok {
-			extraBodyMap, ok := extraBody.(map[string]any)
+			kwargsMap, ok := kwargs.(map[string]any)
 			if !ok {
-				logger.Error("extra_body is not a map[string]any")
+				logger.Error("chat_template_kwargs is not a map[string]any")
 				httpError(ctx, w, http.StatusBadRequest)
 				return
 			}
-			extraBodyMap["thinking"] = think
+			kwargsMap["thinking"] = think
+			data["chat_template_kwargs"] = kwargsMap
 		} else {
-			data["extra_body"] = map[string]any{"thinking": think}
+			data["chat_template_kwargs"] = map[string]any{"thinking": think}
 		}
 
 		requestBody, err = json.Marshal(data)
@@ -113,6 +117,7 @@ func proxy(target *url.URL, thinkingModel, noThinkingModel string) http.HandlerF
 		outreq := r.Clone(r.Context())
 		rewriteRequestURL(outreq, target)
 		outreq.Body = io.NopCloser(bytes.NewReader(requestBody))
+		outreq.ContentLength = int64(len(requestBody))
 		outreq.RequestURI = ""
 
 		outResp, err := httpCli.Do(outreq)
