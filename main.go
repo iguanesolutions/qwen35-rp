@@ -49,8 +49,13 @@ func main() {
 		RequestDumpLogLevel:  COMPLETE,
 		ResponseDumpLogLevel: COMPLETE,
 	})
-	http.HandleFunc("/", httplogger.LogFunc(proxy(backendURL,
+	// Explicit handlers for paths that need transformation
+	http.HandleFunc("/v1/chat/completions", httplogger.LogFunc(proxy(backendURL,
 		cfg.ServedModelName, cfg.ThinkingModelName, cfg.NoThinkingModelName)))
+	http.HandleFunc("/v1/completions", httplogger.LogFunc(proxy(backendURL,
+		cfg.ServedModelName, cfg.ThinkingModelName, cfg.NoThinkingModelName)))
+	// Catch-all for all other paths (passthrough)
+	http.HandleFunc("/", httplogger.LogFunc(passthrough(backendURL)))
 
 	// Prepare HTTP server and clean stop
 	server := &http.Server{Addr: fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)}
