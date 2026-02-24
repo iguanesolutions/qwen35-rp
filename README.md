@@ -1,6 +1,6 @@
 # qwen35-rp
 
-Qwen 3.5 Reverse Proxy is a lightweight HTTP reverse proxy that automatically adjusts sampling parameters (temperature, top_p, etc.) and thinking mode based on whether a thinking or instant mode is being used. It sits between your application and the backend LLM server serving Qwen 3.5 (e.g., vLLM). The proxy supports systemd integration with `type=notify` and structured logging compatible with journald.
+Qwen 3.5 Reverse Proxy is a lightweight HTTP reverse proxy that automatically adjusts sampling parameters (temperature, top_p, etc.) and thinking mode based on whether a thinking or instant mode is being used. It sits between your application and the backend LLM server serving Qwen 3.5 (e.g., vLLM).
 
 ## Core Functionality
 
