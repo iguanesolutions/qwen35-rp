@@ -3,11 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
-
-	"log/slog"
 
 	"github.com/hekmon/httplog/v3"
 )

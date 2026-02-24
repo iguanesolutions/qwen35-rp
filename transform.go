@@ -43,7 +43,7 @@ func proxy(httpCli *http.Client, target *url.URL,
 			slog.String("path", r.URL.Path),
 		)
 		ctx := r.Context()
-
+		// Read request body
 		requestBody, err := io.ReadAll(r.Body)
 		if err != nil {
 			logger.Error("failed to read body", slog.String("error", err.Error()))
