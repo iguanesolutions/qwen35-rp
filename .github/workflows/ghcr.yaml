@@ -1,0 +1,39 @@
+name: Build & Push Docker image to GitHub Container Registry
+on:
+  push:
+    tags:
+      - "v*"
+jobs:
+  buildnpush:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build, tag, and push docker image to GitHub Container Registry
+        env:
+          REGISTRY: ghcr.io
+          REPOSITORY: ${{ github.repository_owner }}/qwen35-rp
+          IMAGE_TAG: ${{ github.ref_name }}
+        run: |
+          docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+
+      - name: Also tag with latest
+        env:
+          REGISTRY: ghcr.io
+          REPOSITORY: ${{ github.repository_owner }}/qwen35-rp
+          IMAGE_TAG: ${{ github.ref_name }}
+        run: |
+          docker tag $REGISTRY/$REPOSITORY:$IMAGE_TAG $REGISTRY/$REPOSITORY:latest
+          docker push $REGISTRY/$REPOSITORY:latest
