@@ -109,7 +109,7 @@ After=network.target
 Type=notify
 User=qwen35-rp
 Group=qwen35-rp
-ExecStart=/usr/bin/qwen35-rp -served-model "Qwen/Qwen3.5-397B-A17B-FP8" -thinking-model "qwen-thinking" -no-thinking-model "qwen-instant"
+ExecStart=/usr/local/bin/qwen35-rp -served-model "Qwen/Qwen3.5-397B-A17B-FP8" -thinking-model "qwen-thinking" -no-thinking-model "qwen-instant"
 Restart=on-failure
 Environment=QWEN35RP_LOGLEVEL=INFO
 
@@ -120,7 +120,7 @@ WantedBy=multi-user.target
 ⚠️ **Security Best Practice**: Always run the proxy under a dedicated, unprivileged user account (e.g., `qwen35-rp`). Never run as root. Create the user with:
 ```bash
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin qwen35-rp
-sudo chown qwen35-rp:qwen35-rp /usr/bin/qwen35-rp
+sudo chown qwen35-rp:qwen35-rp /usr/local/bin/qwen35-rp
 ```
 
 ## Graceful Shutdown
