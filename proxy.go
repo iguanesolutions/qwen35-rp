@@ -222,7 +222,7 @@ func httpError(ctx context.Context, w http.ResponseWriter, statusCode int) {
 }
 
 func generateErrorClientText(ctx context.Context, statusCode int) string {
-	return fmt.Sprintf("%s - check kimi-rp logs for more details (request id #%v)",
+	return fmt.Sprintf("%s - check qwen35-rp logs for more details (request id #%v)",
 		http.StatusText(statusCode),
 		ctx.Value(httplog.ReqIDKey),
 	)

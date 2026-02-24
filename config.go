@@ -56,13 +56,13 @@ func LoadConfig() (Config, error) {
 
 	flag.Parse()
 
-	cfg.Listen = getEnvOrFlag(*listen, "KIMIRP_LISTEN", "0.0.0.0")
-	cfg.Port = getEnvOrFlagInt(*port, "KIMIRP_PORT", 9000)
-	cfg.Target = getEnvOrFlag(*target, "KIMIRP_TARGET", "http://127.0.0.1:8000")
-	cfg.LogLevel = getEnvOrFlag(*loglevel, "KIMIRP_LOGLEVEL", slog.LevelInfo.String())
-	cfg.ServedModelName = getEnvOrFlag(*servedModel, "KIMIRP_SERVED_MODEL_NAME", "")
-	cfg.ThinkingModelName = getEnvOrFlag(*thinkingModel, "KIMIRP_THINKING_MODEL_NAME", "")
-	cfg.NoThinkingModelName = getEnvOrFlag(*noThinkingModel, "KIMIRP_NO_THINKING_MODEL_NAME", "")
+	cfg.Listen = getEnvOrFlag(*listen, "QWEN35RP_LISTEN", "0.0.0.0")
+	cfg.Port = getEnvOrFlagInt(*port, "QWEN35RP_PORT", 9000)
+	cfg.Target = getEnvOrFlag(*target, "QWEN35RP_TARGET", "http://127.0.0.1:8000")
+	cfg.LogLevel = getEnvOrFlag(*loglevel, "QWEN35RP_LOGLEVEL", slog.LevelInfo.String())
+	cfg.ServedModelName = getEnvOrFlag(*servedModel, "QWEN35RP_SERVED_MODEL_NAME", "")
+	cfg.ThinkingModelName = getEnvOrFlag(*thinkingModel, "QWEN35RP_THINKING_MODEL_NAME", "")
+	cfg.NoThinkingModelName = getEnvOrFlag(*noThinkingModel, "QWEN35RP_NO_THINKING_MODEL_NAME", "")
 
 	return cfg, cfg.Validate()
 }

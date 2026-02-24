@@ -1,4 +1,4 @@
-module github.com/iguanesolutions/kimi-rp
+module github.com/iguanesolutions/qwen35-rp
 
 go 1.24.2
 

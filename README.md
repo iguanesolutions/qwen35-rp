@@ -1,13 +1,13 @@
-# kimi-rp
+# qwen35-rp
 
-Kimi Reverse Proxy is a lightweight HTTP reverse proxy that automatically adjusts sampling parameters (temperature, top_p) based on whether a thinking or non-thinking model is being used. It sits between your application and the backend LLM server (e.g., vLLM).
+Qwen35 Reverse Proxy is a lightweight HTTP reverse proxy that automatically adjusts sampling parameters (temperature, top_p) based on whether a thinking or non-thinking model is being used. It sits between your application and the backend LLM server (e.g., vLLM).
 
 ## Installation
 
 Requirements: Go 1.24.2 or later
 
 ```bash
-go build -o kimi-rp .
+go build -o qwen35-rp .
 ```
 
 ## Configuration
@@ -16,12 +16,12 @@ Configure the proxy using command-line flags or environment variables:
 
 | Flag | Environment Variable | Default | Description |
 |------|---------------------|---------|-------------|
-| `-listen` | `KIMIRP_LISTEN` | `0.0.0.0` | IP address to listen on |
-| `-port` | `KIMIRP_PORT` | `9000` | Port to listen on |
-| `-target` | `KIMIRP_TARGET` | `http://127.0.0.1:8000` | Backend target URL |
-| `-loglevel` | `KIMIRP_LOGLEVEL` | `INFO` | Log level (DEBUG, INFO, WARN, ERROR) |
-| `-thinking-model` | `KIMIRP_THINKING_MODEL_NAME` | (required) | Name of the thinking model |
-| `-no-thinking-model` | `KIMIRP_NO_THINKING_MODEL_NAME` | (required) | Name of the non-thinking model |
+| `-listen` | `QWEN35RP_LISTEN` | `0.0.0.0` | IP address to listen on |
+| `-port` | `QWEN35RP_PORT` | `9000` | Port to listen on |
+| `-target` | `QWEN35RP_TARGET` | `http://127.0.0.1:8000` | Backend target URL |
+| `-loglevel` | `QWEN35RP_LOGLEVEL` | `INFO` | Log level (DEBUG, INFO, WARN, ERROR) |
+| `-thinking-model` | `QWEN35RP_THINKING_MODEL_NAME` | (required) | Name of the thinking model |
+| `-no-thinking-model` | `QWEN35RP_NO_THINKING_MODEL_NAME` | (required) | Name of the non-thinking model |
 
 ## How It Works
 
