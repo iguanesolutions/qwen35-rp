@@ -19,9 +19,23 @@ Configure the proxy using command-line flags or environment variables:
 | `-listen` | `QWEN35RP_LISTEN` | `0.0.0.0` | IP address to listen on |
 | `-port` | `QWEN35RP_PORT` | `9000` | Port to listen on |
 | `-target` | `QWEN35RP_TARGET` | `http://127.0.0.1:8000` | Backend target URL |
-| `-loglevel` | `QWEN35RP_LOGLEVEL` | `INFO` | Log level (DEBUG, INFO, WARN, ERROR) |
+| `-loglevel` | `QWEN35RP_LOGLEVEL` | `INFO` | Log level (COMPLETE, DEBUG, INFO, WARN, ERROR) |
 | `-thinking-model` | `QWEN35RP_THINKING_MODEL_NAME` | (required) | Name of the thinking model |
 | `-no-thinking-model` | `QWEN35RP_NO_THINKING_MODEL_NAME` | (required) | Name of the non-thinking model |
+
+## Log Levels
+
+The proxy supports the following log levels:
+
+| Level | Description |
+|-------|-------------|
+| `COMPLETE` | Most verbose - includes full HTTP request/response dumps |
+| `DEBUG` | Debug information |
+| `INFO` | General operational information |
+| `WARN` | Warning messages |
+| `ERROR` | Error messages only |
+
+When set to `COMPLETE`, the proxy will log full HTTP request and response bodies, which is useful for debugging but very verbose.
 
 ## How It Works
 

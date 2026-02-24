@@ -12,10 +12,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hekmon/httplog/v2"
-	autoslog "github.com/iguanesolutions/auto-slog"
-	sysd "github.com/iguanesolutions/go-systemd/v5"
-	sysdnotify "github.com/iguanesolutions/go-systemd/v5/notify"
+	"github.com/hekmon/httplog/v3"
+	autoslog "github.com/iguanesolutions/auto-slog/v2"
+	sysd "github.com/iguanesolutions/go-systemd/v6"
+	sysdnotify "github.com/iguanesolutions/go-systemd/v6/notify"
 )
 
 const (
@@ -34,7 +34,10 @@ func main() {
 	}
 
 	// Init
-	logger = autoslog.NewLogger(autoslog.LogLevel(cfg.LogLevel))
+	logger = autoslog.NewLogger(slog.HandlerOptions{
+		AddSource: true,
+		Level:     parseLogLevel(cfg.LogLevel),
+	})
 	backendURL, err := url.Parse(cfg.Target)
 	if err != nil {
 		logger.Error("failed to parse backend URL", slog.Any("error", err))
@@ -42,7 +45,10 @@ func main() {
 	}
 
 	// Define HTTP handlers and middleware
-	httplogger := httplog.New(logger)
+	httplogger := httplog.New(logger, &httplog.Config{
+		RequestDumpLogLevel:  COMPLETE,
+		ResponseDumpLogLevel: COMPLETE,
+	})
 	http.HandleFunc("/", httplogger.LogFunc(proxy(backendURL,
 		cfg.ServedModelName, cfg.ThinkingModelName, cfg.NoThinkingModelName)))
 

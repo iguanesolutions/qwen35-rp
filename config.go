@@ -6,7 +6,11 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
+	"strings"
 )
+
+// COMPLETE is a log level more verbose than DEBUG for complete request/response dumps
+const COMPLETE = slog.LevelDebug - 4
 
 type Config struct {
 	Listen              string
@@ -49,7 +53,7 @@ func LoadConfig() (Config, error) {
 	listen := flag.String("listen", "0.0.0.0", "IP address to listen on")
 	port := flag.Int("port", 9000, "Port to listen on")
 	target := flag.String("target", "http://127.0.0.1:8000", "Backend target, default is for a local vLLM")
-	loglevel := flag.String("loglevel", slog.LevelInfo.String(), "Log level (DEBUG, INFO, WARN, ERROR)")
+	loglevel := flag.String("loglevel", slog.LevelInfo.String(), "Log level (COMPLETE, DEBUG, INFO, WARN, ERROR)")
 	servedModel := flag.String("served-model", "", "Name of the served model")
 	thinkingModel := flag.String("thinking-model", "", "Name of the thinking model")
 	noThinkingModel := flag.String("no-thinking-model", "", "Name of the no-thinking model")
@@ -87,4 +91,22 @@ func getEnvOrFlagInt(flagVal int, envName string, defaultVal int) int {
 		return flagVal
 	}
 	return defaultVal
+}
+
+// parseLogLevel parses a log level string, including the COMPLETE level
+func parseLogLevel(levelStr string) slog.Level {
+	switch strings.ToUpper(levelStr) {
+	case "COMPLETE":
+		return COMPLETE
+	case "DEBUG", "":
+		return slog.LevelDebug
+	case "INFO":
+		return slog.LevelInfo
+	case "WARN":
+		return slog.LevelWarn
+	case "ERROR":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }

@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hekmon/httplog/v2"
+	"github.com/hekmon/httplog/v3"
 )
 
 var (
