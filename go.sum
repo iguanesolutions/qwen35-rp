@@ -1,3 +1,5 @@
+github.com/hashicorp/go-cleanhttp v0.5.2 h1:035FKYIWjmULyFRBKPs8TBQoi0x6d9G4xc9neXJWAZQ=
+github.com/hashicorp/go-cleanhttp v0.5.2/go.mod h1:kO/YDlP8L1346E6Sodw+PrpBSV4/SoxCXGY6BqNFT48=
 github.com/hekmon/httplog/v3 v3.0.0 h1:34jkOxXRHXw0KECzF0Mcm36puI9cwZrNEaP/lEeC7iw=
 github.com/hekmon/httplog/v3 v3.0.0/go.mod h1:Pgx8KzI8TAXUli/srsM6YI2oeISTumgxJ29jE7oxISo=
 github.com/iguanesolutions/auto-slog/v2 v2.0.0 h1:hoMFD2EYJGEmhI8AYYKUdIP0bEmp2NclFqWRTfHzpDU=

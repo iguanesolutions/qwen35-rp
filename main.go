@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/hashicorp/go-cleanhttp"
 	"github.com/hekmon/httplog/v3"
 	autoslog "github.com/iguanesolutions/auto-slog/v2"
 	sysd "github.com/iguanesolutions/go-systemd/v6"
@@ -49,13 +50,17 @@ func main() {
 		RequestDumpLogLevel:  COMPLETE,
 		ResponseDumpLogLevel: COMPLETE,
 	})
-	// Explicit handlers for paths that need transformation
-	http.HandleFunc("/v1/chat/completions", httplogger.LogFunc(proxy(backendURL,
-		cfg.ServedModelName, cfg.ThinkingModelName, cfg.NoThinkingModelName)))
-	http.HandleFunc("/v1/completions", httplogger.LogFunc(proxy(backendURL,
-		cfg.ServedModelName, cfg.ThinkingModelName, cfg.NoThinkingModelName)))
+	// Create pooled HTTP client for forwarding requests
+	httpClient := cleanhttp.DefaultPooledClient()
+	// Explicit handlers for POST paths that need transformation
+	http.HandleFunc("POST /v1/chat/completions", httplogger.LogFunc(
+		proxy(httpClient, backendURL, cfg.ServedModelName, cfg.ThinkingModelName, cfg.NoThinkingModelName),
+	))
+	http.HandleFunc("POST /v1/completions", httplogger.LogFunc(
+		proxy(httpClient, backendURL, cfg.ServedModelName, cfg.ThinkingModelName, cfg.NoThinkingModelName),
+	))
 	// Catch-all for all other paths (passthrough)
-	http.HandleFunc("/", httplogger.LogFunc(passthrough(backendURL)))
+	http.HandleFunc("/", httplogger.LogFunc(passthrough(httpClient, backendURL)))
 
 	// Prepare HTTP server and clean stop
 	server := &http.Server{Addr: fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)}

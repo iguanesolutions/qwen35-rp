@@ -4,34 +4,16 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/url"
-	"runtime"
 	"syscall"
-	"time"
 
 	"github.com/hekmon/httplog/v3"
 )
 
-func passthrough(target *url.URL) http.HandlerFunc {
-	httpCli := &http.Client{
-		Transport: &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-			DialContext: (&net.Dialer{
-				Timeout:   30 * time.Second,
-				KeepAlive: 30 * time.Second,
-				DualStack: true,
-			}).DialContext,
-			MaxIdleConns:          100,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConnsPerHost:   runtime.GOMAXPROCS(0) + 1,
-		},
-	}
+func passthrough(httpCli *http.Client, target *url.URL) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Prepare
 		logger := logger.With(httplog.GetReqIDSLogAttr(r.Context()))
 		logger.Debug("passthrough request",
 			slog.String("remote_addr", r.RemoteAddr),
@@ -39,10 +21,10 @@ func passthrough(target *url.URL) http.HandlerFunc {
 			slog.String("path", r.URL.Path),
 		)
 		ctx := r.Context()
-
-		outreq := r.Clone(r.Context())
+		// Create the outgoing request
+		outreq := r.Clone(ctx)
 		rewriteRequestURL(outreq, target)
-
+		// Send the request
 		outResp, err := httpCli.Do(outreq)
 		if err != nil {
 			logger.Error("failed to send upstream request", slog.Any("error", err))
