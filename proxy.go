@@ -19,12 +19,23 @@ import (
 	"github.com/hekmon/httplog/v2"
 )
 
-const (
-	temperatureKey     = "temperature"
-	thinkTemperature   = 1.0
-	noThinkTemperature = 0.6
-	topPKey            = "top_p"
-	topP               = 0.95
+var (
+	thinkSamplingParams = map[string]any{
+		"temperature":        0.6,
+		"top_p":              0.95,
+		"top_k":              20,
+		"min_p":              0.0,
+		"presence_penalty":   0.0,
+		"repetition_penalty": 1.0,
+	}
+	noThinkSamplingParams = map[string]any{
+		"temperature":        0.7,
+		"top_p":              0.8,
+		"top_k":              20,
+		"min_p":              0.0,
+		"presence_penalty":   1.5,
+		"repetition_penalty": 1.0,
+	}
 )
 
 func proxy(target *url.URL,
@@ -78,10 +89,10 @@ func proxy(target *url.URL,
 		switch modelName {
 		case thinkingModel:
 			think = true
-			applySamplingParams(data, thinkTemperature, topP, logger)
+			applySamplingParams(data, thinkSamplingParams, logger)
 		case noThinkingModel:
 			think = false
-			applySamplingParams(data, noThinkTemperature, topP, logger)
+			applySamplingParams(data, noThinkSamplingParams, logger)
 		default:
 			logger.Error("unsupported model", slog.String("model", modelName))
 			httpError(ctx, w, http.StatusBadRequest)
@@ -98,10 +109,10 @@ func proxy(target *url.URL,
 				httpError(ctx, w, http.StatusBadRequest)
 				return
 			}
-			kwargsMap["thinking"] = think
+			kwargsMap["enable_thinking"] = think
 			data["chat_template_kwargs"] = kwargsMap
 		} else {
-			data["chat_template_kwargs"] = map[string]any{"thinking": think}
+			data["chat_template_kwargs"] = map[string]any{"enable_thinking": think}
 		}
 
 		requestBody, err = json.Marshal(data)
@@ -189,24 +200,17 @@ func rewriteRequestURL(req *http.Request, target *url.URL) {
 	}
 }
 
-func applySamplingParams(data map[string]any, temperature, topP float64, logger *slog.Logger) {
-	// Temperature
-	if _, exists := data[temperatureKey]; !exists {
-		data[temperatureKey] = temperature
-	} else {
-		logger.Debug("temperature already set in request, not modifying",
-			slog.Any("value", data[temperatureKey]),
-			slog.Float64("default_value", temperature),
-		)
-	}
-	// Top P
-	if _, exists := data[topPKey]; !exists {
-		data[topPKey] = topP
-	} else {
-		logger.Debug("top_p already set in request, not modifying",
-			slog.Any("value", data[topPKey]),
-			slog.Float64("default_value", topP),
-		)
+func applySamplingParams(data map[string]any, samplingParams map[string]any, logger *slog.Logger) {
+	for k, v := range samplingParams {
+		if _, ok := data[k]; ok {
+			logger.Debug("key already set in request, not modifying",
+				slog.Any("key", k),
+				slog.Any("value", data[k]),
+				slog.Any("default_value", v),
+			)
+			continue
+		}
+		data[k] = v
 	}
 }
 
