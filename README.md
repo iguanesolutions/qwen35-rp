@@ -1,6 +1,20 @@
 # qwen35-rp
 
-Qwen35 Reverse Proxy is a lightweight HTTP reverse proxy that automatically adjusts sampling parameters (temperature, top_p) based on whether a thinking or non-thinking model is being used. It sits between your application and the backend LLM server (e.g., vLLM).
+Qwen 3.5 Reverse Proxy is a lightweight HTTP reverse proxy that automatically adjusts sampling parameters (temperature, top_p, etc.) and thinking mode based on whether a thinking or non-thinking model is being used. It sits between your application and the backend LLM server serving Qwen 3.5 (e.g., vLLM).
+
+## Core Functionality
+
+This proxy's primary purpose is to:
+
+1. **Accept requests for two virtual model names** (configured via `-thinking-model` and `-no-thinking-model`), rejecting all other model names with HTTP 400
+2. **Set appropriate sampling parameters** automatically based on the virtual model:
+   - **Thinking models**: `temperature=0.6`, `top_p=0.95`, `top_k=20`, `min_p=0.0`, `presence_penalty=0.0`, `repetition_penalty=1.0`
+   - **Non-thinking models**: `temperature=0.7`, `top_p=0.8`, `top_k=20`, `min_p=0.0`, `presence_penalty=1.5`, `repetition_penalty=1.0`
+3. **Configure thinking mode** by setting `chat_template_kwargs.enable_thinking`:
+   - `enable_thinking=true` for thinking models
+   - `enable_thinking=false` for non-thinking models
+4. **Rewrite the model name** to the actual backend model name (e.g., `Qwen/Qwen3.5-397B-A17B-FP8`) before forwarding to vLLM
+5. **Fix vLLM response bugs** where non-thinking, non-streaming responses incorrectly place content in `reasoning_content` or `reasoning` fields instead of `content`
 
 ## Installation
 
@@ -8,6 +22,26 @@ Requirements: Go 1.24.2 or later
 
 ```bash
 go build -o qwen35-rp .
+```
+
+## Usage
+
+```bash
+./qwen35-rp \
+  -target "http://127.0.0.1:8000" \
+  -served-model "Qwen/Qwen3.5-397B-A17B-FP8" \
+  -thinking-model "qwen-thinking" \
+  -no-thinking-model "qwen-no-thinking"
+```
+
+Or using environment variables:
+
+```bash
+export QWEN35RP_TARGET="http://127.0.0.1:8000"
+export QWEN35RP_SERVED_MODEL_NAME="Qwen/Qwen3.5-397B-A17B-FP8"
+export QWEN35RP_THINKING_MODEL_NAME="qwen-thinking"
+export QWEN35RP_NO_THINKING_MODEL_NAME="qwen-no-thinking"
+./qwen35-rp
 ```
 
 ## Configuration
@@ -25,6 +59,20 @@ Configure the proxy using command-line flags or environment variables:
 | `-no-thinking-model` | `QWEN35RP_NO_THINKING_MODEL_NAME` | (required) | Name of the non-thinking model (incoming request identifier) |
 | `-enforce-sampling-params` | `QWEN35RP_ENFORCE_SAMPLING_PARAMS` | `false` | Enforce sampling parameters, overriding client-provided values |
 
+### Enforce Sampling Parameters
+
+By default, the proxy only sets sampling parameters if they are not already present in the request. When `-enforce-sampling-params` is enabled, the proxy will **always override** client-provided sampling parameters with the predefined values for the detected model type.
+
+## Request Routing
+
+- **`POST /v1/chat/completions`**: Transformed (sampling params + thinking mode applied)
+- **`POST /v1/completions`**: Transformed (sampling params + thinking mode applied)
+- **All other paths**: Passed through unchanged to the backend
+
+## Health Check
+
+- **`GET /health`**: Returns `{"status":"healthy"}` for Docker health checks
+
 ## Log Levels
 
 The proxy supports the following log levels:
@@ -32,25 +80,18 @@ The proxy supports the following log levels:
 | Level | Description |
 |-------|-------------|
 | `COMPLETE` | Most verbose - includes full HTTP request/response dumps |
-| `DEBUG` | Debug information |
+| `DEBUG` | Debug information including parameter application details |
 | `INFO` | General operational information |
 | `WARN` | Warning messages |
 | `ERROR` | Error messages only |
 
 When set to `COMPLETE`, the proxy will log full HTTP request and response bodies, which is useful for debugging but very verbose.
 
-## How It Works
+⚠️ **Privacy Warning**: LLM requests often contain sensitive or personal data (conversation history, personal information, confidential content). The `COMPLETE` log level will expose all this data in plaintext. Only enable it in secure, non-production environments or ensure logs are properly secured and retained temporarily.
 
-1. Client sends a request with a model name in the request body
-2. Proxy inspects the `model` field to determine if it's a thinking or non-thinking model
-3. Proxy sets appropriate sampling parameters:
-   - If thinking model: `temperature=0.6`, `top_p=0.95`, `top_k=20`, `min_p=0.0`, `presence_penalty=0.0`, `repetition_penalty=1.0`
-   - If non-thinking model: `temperature=0.7`, `top_p=0.8`, `top_k=20`, `min_p=0.0`, `presence_penalty=1.5`, `repetition_penalty=1.0`
-4. Proxy sets `chat_template_kwargs.enable_thinking`:
-   - If thinking model: `enable_thinking=true`
-   - If non-thinking model: `enable_thinking=false`
-5. Request is forwarded to the backend server
-6. Response is streamed back to the client
+## Graceful Shutdown
+
+The server supports graceful shutdown with a 3-minute timeout to allow in-flight requests to complete. Send `SIGINT` or `SIGTERM` to initiate shutdown.
 
 ## License
 
