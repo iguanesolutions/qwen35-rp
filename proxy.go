@@ -58,6 +58,7 @@ func proxy(target *url.URL,
 		},
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Prepare
 		logger := logger.With(httplog.GetReqIDSLogAttr(r.Context()))
 		logger.Info("received a request",
 			slog.String("remote_addr", r.RemoteAddr),
@@ -71,6 +72,7 @@ func proxy(target *url.URL,
 			httpError(ctx, w, http.StatusInternalServerError)
 			return
 		}
+		// Parse request body
 		var data map[string]any
 		err = json.Unmarshal(requestBody, &data)
 		if err != nil {

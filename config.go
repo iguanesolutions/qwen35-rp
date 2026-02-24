@@ -98,7 +98,7 @@ func parseLogLevel(levelStr string) slog.Level {
 	switch strings.ToUpper(levelStr) {
 	case "COMPLETE":
 		return COMPLETE
-	case "DEBUG", "":
+	case "DEBUG":
 		return slog.LevelDebug
 	case "INFO":
 		return slog.LevelInfo

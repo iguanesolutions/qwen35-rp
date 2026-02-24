@@ -42,10 +42,13 @@ When set to `COMPLETE`, the proxy will log full HTTP request and response bodies
 1. Client sends a request with a model name in the request body
 2. Proxy inspects the `model` field to determine if it's a thinking or non-thinking model
 3. Proxy sets appropriate sampling parameters:
-   - If thinking model: `temperature=1.0`, `top_p=0.95`, `extra_body.thinking=true`
-   - If non-thinking model: `temperature=0.6`, `top_p=0.95`, `extra_body.thinking=false`
-4. Request is forwarded to the backend server
-5. Response is streamed back to the client
+   - If thinking model: `temperature=0.6`, `top_p=0.95`, `top_k=20`, `min_p=0.0`, `presence_penalty=0.0`, `repetition_penalty=1.0`
+   - If non-thinking model: `temperature=0.7`, `top_p=0.8`, `top_k=20`, `min_p=0.0`, `presence_penalty=1.5`, `repetition_penalty=1.0`
+4. Proxy sets `chat_template_kwargs.enable_thinking`:
+   - If thinking model: `enable_thinking=true`
+   - If non-thinking model: `enable_thinking=false`
+5. Request is forwarded to the backend server
+6. Response is streamed back to the client
 
 ## License
 
