@@ -33,7 +33,7 @@ var (
 )
 
 func proxy(httpCli *http.Client, target *url.URL,
-	servedModel, thinkingModel, noThinkingModel string) http.HandlerFunc {
+	servedModel, thinkingModel, noThinkingModel string, enforceSamplingParams bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Prepare
 		logger := logger.With(httplog.GetReqIDSLogAttr(r.Context()))
@@ -69,10 +69,10 @@ func proxy(httpCli *http.Client, target *url.URL,
 		switch modelName {
 		case thinkingModel:
 			think = true
-			applySamplingParams(data, thinkSamplingParams, logger)
+			applySamplingParams(data, thinkSamplingParams, logger, enforceSamplingParams)
 		case noThinkingModel:
 			think = false
-			applySamplingParams(data, noThinkSamplingParams, logger)
+			applySamplingParams(data, noThinkSamplingParams, logger, enforceSamplingParams)
 		default:
 			logger.Error("unsupported model", slog.String("model", modelName))
 			httpError(ctx, w, http.StatusBadRequest)

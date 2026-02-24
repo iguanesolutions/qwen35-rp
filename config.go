@@ -13,13 +13,14 @@ import (
 const COMPLETE = slog.LevelDebug - 4
 
 type Config struct {
-	Listen              string
-	Port                int
-	Target              string
-	LogLevel            string
-	ServedModelName     string
-	ThinkingModelName   string
-	NoThinkingModelName string
+	Listen                string
+	Port                  int
+	Target                string
+	LogLevel              string
+	ServedModelName       string
+	ThinkingModelName     string
+	NoThinkingModelName   string
+	EnforceSamplingParams bool
 }
 
 func (c Config) Validate() error {
@@ -57,6 +58,7 @@ func LoadConfig() (Config, error) {
 	servedModel := flag.String("served-model", "", "Name of the served model")
 	thinkingModel := flag.String("thinking-model", "", "Name of the thinking model")
 	noThinkingModel := flag.String("no-thinking-model", "", "Name of the no-thinking model")
+	enforceSampling := flag.Bool("enforce-sampling-params", false, "Enforce sampling parameters, overriding client-provided values")
 
 	flag.Parse()
 
@@ -67,6 +69,7 @@ func LoadConfig() (Config, error) {
 	cfg.ServedModelName = getEnvOrFlag(*servedModel, "QWEN35RP_SERVED_MODEL_NAME", "")
 	cfg.ThinkingModelName = getEnvOrFlag(*thinkingModel, "QWEN35RP_THINKING_MODEL_NAME", "")
 	cfg.NoThinkingModelName = getEnvOrFlag(*noThinkingModel, "QWEN35RP_NO_THINKING_MODEL_NAME", "")
+	cfg.EnforceSamplingParams = getEnvOrFlagBool(*enforceSampling, "QWEN35RP_ENFORCE_SAMPLING_PARAMS", false)
 
 	return cfg, cfg.Validate()
 }
@@ -85,6 +88,18 @@ func getEnvOrFlagInt(flagVal int, envName string, defaultVal int) int {
 	if envVal := os.Getenv(envName); envVal != "" {
 		if intVal, err := strconv.Atoi(envVal); err == nil {
 			return intVal
+		}
+	}
+	if flagVal != defaultVal {
+		return flagVal
+	}
+	return defaultVal
+}
+
+func getEnvOrFlagBool(flagVal bool, envName string, defaultVal bool) bool {
+	if envVal := os.Getenv(envName); envVal != "" {
+		if boolVal, err := strconv.ParseBool(envVal); err == nil {
+			return boolVal
 		}
 	}
 	if flagVal != defaultVal {

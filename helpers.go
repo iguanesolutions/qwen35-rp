@@ -60,14 +60,24 @@ func rewriteRequestURL(req *http.Request, target *url.URL) {
 }
 
 // applySamplingParams applies sampling parameters to request data
-func applySamplingParams(data map[string]any, samplingParams map[string]any, logger *slog.Logger) {
+// If enforce is true, parameters are always set, overriding any client-provided values
+func applySamplingParams(data map[string]any, samplingParams map[string]any, logger *slog.Logger, enforce bool) {
 	for k, v := range samplingParams {
 		if _, ok := data[k]; ok {
-			logger.Debug("key already set in request, not modifying",
-				slog.Any("key", k),
-				slog.Any("value", data[k]),
-				slog.Any("default_value", v),
-			)
+			if enforce {
+				logger.Debug("enforcing sampling parameter",
+					slog.Any("key", k),
+					slog.Any("old_value", data[k]),
+					slog.Any("new_value", v),
+				)
+				data[k] = v
+			} else {
+				logger.Debug("key already set in request, not modifying",
+					slog.Any("key", k),
+					slog.Any("value", data[k]),
+					slog.Any("default_value", v),
+				)
+			}
 			continue
 		}
 		data[k] = v

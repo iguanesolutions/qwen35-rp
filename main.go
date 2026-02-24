@@ -54,10 +54,10 @@ func main() {
 	httpClient := cleanhttp.DefaultPooledClient()
 	// Explicit handlers for POST paths that need transformation
 	http.HandleFunc("POST /v1/chat/completions", httplogger.LogFunc(
-		proxy(httpClient, backendURL, cfg.ServedModelName, cfg.ThinkingModelName, cfg.NoThinkingModelName),
+		proxy(httpClient, backendURL, cfg.ServedModelName, cfg.ThinkingModelName, cfg.NoThinkingModelName, cfg.EnforceSamplingParams),
 	))
 	http.HandleFunc("POST /v1/completions", httplogger.LogFunc(
-		proxy(httpClient, backendURL, cfg.ServedModelName, cfg.ThinkingModelName, cfg.NoThinkingModelName),
+		proxy(httpClient, backendURL, cfg.ServedModelName, cfg.ThinkingModelName, cfg.NoThinkingModelName, cfg.EnforceSamplingParams),
 	))
 	// Catch-all for all other paths (passthrough)
 	http.HandleFunc("/", httplogger.LogFunc(passthrough(httpClient, backendURL)))

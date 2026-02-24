@@ -20,8 +20,10 @@ Configure the proxy using command-line flags or environment variables:
 | `-port` | `QWEN35RP_PORT` | `9000` | Port to listen on |
 | `-target` | `QWEN35RP_TARGET` | `http://127.0.0.1:8000` | Backend target URL |
 | `-loglevel` | `QWEN35RP_LOGLEVEL` | `INFO` | Log level (COMPLETE, DEBUG, INFO, WARN, ERROR) |
-| `-thinking-model` | `QWEN35RP_THINKING_MODEL_NAME` | (required) | Name of the thinking model |
-| `-no-thinking-model` | `QWEN35RP_NO_THINKING_MODEL_NAME` | (required) | Name of the non-thinking model |
+| `-served-model` | `QWEN35RP_SERVED_MODEL_NAME` | (required) | Backend model name to use in outgoing requests |
+| `-thinking-model` | `QWEN35RP_THINKING_MODEL_NAME` | (required) | Name of the thinking model (incoming request identifier) |
+| `-no-thinking-model` | `QWEN35RP_NO_THINKING_MODEL_NAME` | (required) | Name of the non-thinking model (incoming request identifier) |
+| `-enforce-sampling-params` | `QWEN35RP_ENFORCE_SAMPLING_PARAMS` | `false` | Enforce sampling parameters, overriding client-provided values |
 
 ## Log Levels
 
