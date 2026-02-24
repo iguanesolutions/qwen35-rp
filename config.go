@@ -11,6 +11,7 @@ import (
 
 // COMPLETE is a log level more verbose than DEBUG for complete request/response dumps
 const COMPLETE = slog.LevelDebug - 4
+const COMPLETE_LEVEL = "COMPLETE"
 
 type Config struct {
 	Listen                string
@@ -111,7 +112,7 @@ func getEnvOrFlagBool(flagVal bool, envName string, defaultVal bool) bool {
 // parseLogLevel parses a log level string, including the COMPLETE level
 func parseLogLevel(levelStr string) slog.Level {
 	switch strings.ToUpper(levelStr) {
-	case "COMPLETE":
+	case COMPLETE_LEVEL:
 		return COMPLETE
 	case "DEBUG":
 		return slog.LevelDebug

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/hashicorp/go-cleanhttp"
@@ -39,6 +40,12 @@ func main() {
 		AddSource: true,
 		Level:     parseLogLevel(cfg.LogLevel),
 	})
+	// Warn if COMPLETE log level is enabled
+	if cfg.LogLevel == COMPLETE_LEVEL {
+		logger.Warn("COMPLETE log level enabled - full request/response bodies will be logged, including potentially sensitive data",
+			slog.String("log_level", cfg.LogLevel),
+		)
+	}
 	backendURL, err := url.Parse(cfg.Target)
 	if err != nil {
 		logger.Error("failed to parse backend URL", slog.Any("error", err))
@@ -52,6 +59,17 @@ func main() {
 	})
 	// Create pooled HTTP client for forwarding requests
 	httpClient := cleanhttp.DefaultPooledClient()
+	// Health check endpoints (not logged)
+	http.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"healthy"}`))
+	})
+	http.HandleFunc("GET /ready", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ready"}`))
+	})
 	// Explicit handlers for POST paths that need transformation
 	http.HandleFunc("POST /v1/chat/completions", httplogger.LogFunc(
 		proxy(httpClient, backendURL, cfg.ServedModelName, cfg.ThinkingModelName, cfg.NoThinkingModelName, cfg.EnforceSamplingParams),
@@ -64,7 +82,7 @@ func main() {
 
 	// Prepare HTTP server and clean stop
 	server := &http.Server{Addr: fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)}
-	signalStopCtx, signalStopCtxCancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Interrupt)
+	signalStopCtx, signalStopCtxCancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer signalStopCtxCancel()
 	go cleanStop(signalStopCtx, server)
 
