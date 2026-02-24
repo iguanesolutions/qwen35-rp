@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"syscall"
 
 	"github.com/hekmon/httplog/v3"
@@ -32,9 +33,11 @@ var (
 	}
 )
 
-func proxy(httpCli *http.Client, target *url.URL,
+func transform(httpCli *http.Client, target *url.URL,
 	servedModel, thinkingModel, noThinkingModel string, enforceSamplingParams bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Track thinking mode and streaming for response fixing
+		var think, stream bool
 		// Prepare
 		logger := logger.With(httplog.GetReqIDSLogAttr(r.Context()))
 		logger.Info("received a request",
@@ -64,8 +67,11 @@ func proxy(httpCli *http.Client, target *url.URL,
 			httpError(ctx, w, http.StatusBadRequest)
 			return
 		}
+		// Track streaming mode for response fixing
+		if streamVal, ok := data["stream"]; ok {
+			stream, _ = streamVal.(bool)
+		}
 		// check thinking mode based on model name and apply sampling parameters
-		var think bool
 		switch modelName {
 		case thinkingModel:
 			think = true
@@ -121,14 +127,118 @@ func proxy(httpCli *http.Client, target *url.URL,
 			return
 		}
 		defer outResp.Body.Close()
+
+		// Read response body
+		responseBody, err := io.ReadAll(outResp.Body)
+		if err != nil {
+			logger.Error("failed to read response body", slog.String("error", err.Error()))
+			httpError(ctx, w, http.StatusInternalServerError)
+			return
+		}
+
+		// Fix vLLM bug: non-thinking, non-streaming responses incorrectly placed in reasoning_content/reasoning fields
+		responseBody = fixVLLMResponse(responseBody, think, stream, logger)
+
 		for header, values := range outResp.Header {
 			for _, value := range values {
 				w.Header().Add(header, value)
 			}
 		}
+		w.Header().Set("Content-Length", strconv.Itoa(len(responseBody)))
 		w.WriteHeader(outResp.StatusCode)
-		if _, err = io.Copy(w, outResp.Body); err != nil {
-			logger.Error("failed to stream back response", slog.String("error", err.Error()))
+		if _, err = w.Write(responseBody); err != nil {
+			logger.Error("failed to write response", slog.String("error", err.Error()))
 		}
 	}
+}
+
+// fixVLLMResponse fixes vLLM bug where non-thinking responses are incorrectly
+// placed in reasoning_content or reasoning fields instead of content field.
+// This only applies when think=false (no-thinking mode) AND stream=false (non-streaming).
+func fixVLLMResponse(responseBody []byte, think, stream bool, logger *slog.Logger) []byte {
+	// Only fix responses for non-thinking mode and non-streaming
+	if think || stream {
+		return responseBody
+	}
+
+	// Try to parse the response as JSON
+	var data map[string]any
+	if err := json.Unmarshal(responseBody, &data); err != nil {
+		// Not valid JSON, return as-is
+		return responseBody
+	}
+
+	// Check if this is a chat completion response (has choices array)
+	choices, ok := data["choices"].([]any)
+	if !ok || len(choices) == 0 {
+		return responseBody
+	}
+
+	modified := false
+	for i, choice := range choices {
+		choiceMap, ok := choice.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		// Check if this is a delta (streaming) or message (non-streaming)
+		var message map[string]any
+		var isDelta bool
+
+		if msg, ok := choiceMap["message"].(map[string]any); ok {
+			message = msg
+			isDelta = false
+		} else if delta, ok := choiceMap["delta"].(map[string]any); ok {
+			message = delta
+			isDelta = true
+		} else {
+			continue
+		}
+
+		// Check if content is empty/missing and reasoning_content or reasoning exists
+		content, hasContent := message["content"].(string)
+		reasoningContent, hasReasoningContent := message["reasoning_content"].(string)
+		reasoning, hasReasoning := message["reasoning"].(string)
+
+		// Fix: if content is empty but reasoning_content or reasoning has value, move it to content
+		if (!hasContent || content == "") && (hasReasoningContent || hasReasoning) {
+			var reasoningText string
+			if hasReasoningContent {
+				reasoningText = reasoningContent
+			} else if hasReasoning {
+				reasoningText = reasoning
+			}
+
+			if reasoningText != "" {
+				message["content"] = reasoningText
+				// Remove the incorrect fields
+				delete(message, "reasoning_content")
+				delete(message, "reasoning")
+				modified = true
+				logger.Info("vLLM response fixed: moved reasoning content to content field (no-thinking, non-streaming mode)")
+				logger.Debug("fixed vLLM response: moved reasoning content to content field")
+			}
+		}
+
+		// Update the choice in the array
+		if isDelta {
+			choiceMap["delta"] = message
+		} else {
+			choiceMap["message"] = message
+		}
+		choices[i] = choiceMap
+	}
+
+	if modified {
+		data["choices"] = choices
+		// Re-marshal the response
+		fixedBody, err := json.Marshal(data)
+		if err != nil {
+			logger.Error("failed to marshal fixed response body", slog.Any("error", err))
+			return responseBody
+		}
+		return fixedBody
+	}
+
+	return responseBody
 }
