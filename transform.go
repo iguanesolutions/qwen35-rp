@@ -134,6 +134,8 @@ func transform(httpCli *http.Client, target *url.URL,
 			return
 		}
 		logger.Debug("rewrited request body", slog.String("body", string(requestBody)))
+		// Track modified request
+		modifiedRequests.Add(1)
 		// prepare outgoing request
 		outreq := r.Clone(ctx)
 		rewriteRequestURL(outreq, target)
@@ -222,17 +224,28 @@ func fixVLLMResponse(responseBody []byte, think, stream bool, logger *slog.Logge
 		}
 
 		// Check if content is empty/missing and reasoning_content or reasoning exists
-		content, hasContent := message["content"].(string)
+		// Handle content as string or null
+		var content string
+		var hasContent bool
+		if contentVal, exists := message["content"]; exists {
+			if contentStr, ok := contentVal.(string); ok {
+				content = contentStr
+				hasContent = true
+			}
+		}
 		reasoningContent, hasReasoningContent := message["reasoning_content"].(string)
 		reasoning, hasReasoning := message["reasoning"].(string)
 
-		// Fix: if content is empty but reasoning_content or reasoning has value, move it to content
+		// Fix: if content is empty/missing but reasoning_content or reasoning has value, move it to content
 		if (!hasContent || content == "") && (hasReasoningContent || hasReasoning) {
 			var reasoningText string
-			if hasReasoningContent {
+			var reasoningSource string
+			if hasReasoningContent && reasoningContent != "" {
 				reasoningText = reasoningContent
-			} else if hasReasoning {
+				reasoningSource = "reasoning_content"
+			} else if hasReasoning && reasoning != "" {
 				reasoningText = reasoning
+				reasoningSource = "reasoning"
 			}
 
 			if reasoningText != "" {
@@ -241,8 +254,10 @@ func fixVLLMResponse(responseBody []byte, think, stream bool, logger *slog.Logge
 				delete(message, "reasoning_content")
 				delete(message, "reasoning")
 				modified = true
-				logger.Info("vLLM response fixed: moved reasoning content to content field (no-thinking, non-streaming mode)")
-				logger.Debug("fixed vLLM response: moved reasoning content to content field")
+				logger.Info("vLLM response fixed: moved reasoning content to content field (no-thinking, non-streaming mode)",
+					slog.String("source_field", reasoningSource),
+					slog.Int("choice_index", i),
+				)
 			}
 		}
 
@@ -263,6 +278,7 @@ func fixVLLMResponse(responseBody []byte, think, stream bool, logger *slog.Logge
 			logger.Error("failed to marshal fixed response body", slog.Any("error", err))
 			return responseBody
 		}
+		logger.Debug("response body re-marshaled after fix")
 		return fixedBody
 	}
 

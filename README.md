@@ -6,7 +6,7 @@ Qwen 3.5 Reverse Proxy is a lightweight HTTP reverse proxy that automatically ad
 
 This proxy's primary purpose is to:
 
-1. **Accept requests for two virtual model names** (configured via `-thinking-model` and `-no-thinking-model`), rejecting all other model names with HTTP 400
+1. **Accept requests for four virtual model names** (configured via `-thinking-general`, `-thinking-coding`, `-instruct-general`, and `-instruct-reasoning`), rejecting all other model names with HTTP 400
 2. **Set appropriate sampling parameters** automatically based on one of four profiles (official Qwen-recommended values from [Hugging Face](https://huggingface.co/Qwen/Qwen3.5-397B-A17B-FP8#using-qwen35-via-the-chat-completions-api)):
    - **Thinking mode for general tasks**: `temperature=1.0`, `top_p=0.95`, `top_k=20`, `min_p=0.0`, `presence_penalty=1.5`, `repetition_penalty=1.0`
    - **Thinking mode for precise coding tasks**: `temperature=0.6`, `top_p=0.95`, `top_k=20`, `min_p=0.0`, `presence_penalty=0.0`, `repetition_penalty=1.0`
