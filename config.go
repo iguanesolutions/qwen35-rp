@@ -14,14 +14,16 @@ const COMPLETE = slog.LevelDebug - 4
 const COMPLETE_LEVEL = "COMPLETE"
 
 type Config struct {
-	Listen                string
-	Port                  int
-	Target                string
-	LogLevel              string
-	ServedModelName       string
-	ThinkingModelName     string
-	NoThinkingModelName   string
-	EnforceSamplingParams bool
+	Listen                 string
+	Port                   int
+	Target                 string
+	LogLevel               string
+	ServedModelName        string
+	ThinkingGeneralModel   string
+	ThinkingCodingModel    string
+	InstructGeneralModel   string
+	InstructReasoningModel string
+	EnforceSamplingParams  bool
 }
 
 func (c Config) Validate() error {
@@ -40,11 +42,17 @@ func (c Config) Validate() error {
 	if c.ServedModelName == "" {
 		return errors.New("served model name cannot be empty")
 	}
-	if c.ThinkingModelName == "" {
-		return errors.New("thinking model name cannot be empty")
+	if c.ThinkingGeneralModel == "" {
+		return errors.New("thinking-general model name cannot be empty")
 	}
-	if c.NoThinkingModelName == "" {
-		return errors.New("no-thinking model name cannot be empty")
+	if c.ThinkingCodingModel == "" {
+		return errors.New("thinking-coding model name cannot be empty")
+	}
+	if c.InstructGeneralModel == "" {
+		return errors.New("instruct-general model name cannot be empty")
+	}
+	if c.InstructReasoningModel == "" {
+		return errors.New("instruct-reasoning model name cannot be empty")
 	}
 	return nil
 }
@@ -57,8 +65,10 @@ func LoadConfig() (Config, error) {
 	target := flag.String("target", "http://127.0.0.1:8000", "Backend target, default is for a local vLLM")
 	loglevel := flag.String("loglevel", slog.LevelInfo.String(), "Log level (COMPLETE, DEBUG, INFO, WARN, ERROR)")
 	servedModel := flag.String("served-model", "", "Name of the served model")
-	thinkingModel := flag.String("thinking-model", "", "Name of the thinking model")
-	noThinkingModel := flag.String("no-thinking-model", "", "Name of the no-thinking model")
+	thinkingGeneral := flag.String("thinking-general", "", "Name of the thinking-general model")
+	thinkingCoding := flag.String("thinking-coding", "", "Name of the thinking-coding model")
+	instructGeneral := flag.String("instruct-general", "", "Name of the instruct-general model")
+	instructReasoning := flag.String("instruct-reasoning", "", "Name of the instruct-reasoning model")
 	enforceSampling := flag.Bool("enforce-sampling-params", false, "Enforce sampling parameters, overriding client-provided values")
 
 	flag.Parse()
@@ -68,8 +78,10 @@ func LoadConfig() (Config, error) {
 	cfg.Target = getEnvOrFlag(*target, "QWEN35RP_TARGET", "http://127.0.0.1:8000")
 	cfg.LogLevel = getEnvOrFlag(*loglevel, "QWEN35RP_LOGLEVEL", slog.LevelInfo.String())
 	cfg.ServedModelName = getEnvOrFlag(*servedModel, "QWEN35RP_SERVED_MODEL_NAME", "")
-	cfg.ThinkingModelName = getEnvOrFlag(*thinkingModel, "QWEN35RP_THINKING_MODEL_NAME", "")
-	cfg.NoThinkingModelName = getEnvOrFlag(*noThinkingModel, "QWEN35RP_NO_THINKING_MODEL_NAME", "")
+	cfg.ThinkingGeneralModel = getEnvOrFlag(*thinkingGeneral, "QWEN35RP_THINKING_GENERAL_MODEL", "")
+	cfg.ThinkingCodingModel = getEnvOrFlag(*thinkingCoding, "QWEN35RP_THINKING_CODING_MODEL", "")
+	cfg.InstructGeneralModel = getEnvOrFlag(*instructGeneral, "QWEN35RP_INSTRUCT_GENERAL_MODEL", "")
+	cfg.InstructReasoningModel = getEnvOrFlag(*instructReasoning, "QWEN35RP_INSTRUCT_REASONING_MODEL", "")
 	cfg.EnforceSamplingParams = getEnvOrFlagBool(*enforceSampling, "QWEN35RP_ENFORCE_SAMPLING_PARAMS", false)
 
 	return cfg, cfg.Validate()

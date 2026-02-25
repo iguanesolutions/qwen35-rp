@@ -1,18 +1,20 @@
 # qwen35-rp
 
-Qwen 3.5 Reverse Proxy is a lightweight HTTP reverse proxy that automatically adjusts sampling parameters (temperature, top_p, etc.) and thinking mode based on whether a thinking or instant mode is being used. It sits between your application and the backend LLM server serving Qwen 3.5 (e.g., vLLM).
+Qwen 3.5 Reverse Proxy is a lightweight HTTP reverse proxy that automatically adjusts sampling parameters (temperature, top_p, etc.) and thinking mode based on one of four predefined profiles. It sits between your application and the backend LLM server serving Qwen 3.5 (e.g., vLLM).
 
 ## Core Functionality
 
 This proxy's primary purpose is to:
 
 1. **Accept requests for two virtual model names** (configured via `-thinking-model` and `-no-thinking-model`), rejecting all other model names with HTTP 400
-2. **Set appropriate sampling parameters** automatically based on the virtual model (official Qwen-recommended values from [Hugging Face](https://huggingface.co/Qwen/Qwen3.5-397B-A17B-FP8#using-qwen35-via-the-chat-completions-api)):
-   - **Thinking mode**: `temperature=0.6`, `top_p=0.95`, `top_k=20`, `min_p=0.0`, `presence_penalty=0.0`, `repetition_penalty=1.0`
-   - **Instant mode**: `temperature=0.7`, `top_p=0.8`, `top_k=20`, `min_p=0.0`, `presence_penalty=1.5`, `repetition_penalty=1.0`
+2. **Set appropriate sampling parameters** automatically based on one of four profiles (official Qwen-recommended values from [Hugging Face](https://huggingface.co/Qwen/Qwen3.5-397B-A17B-FP8#using-qwen35-via-the-chat-completions-api)):
+   - **Thinking mode for general tasks**: `temperature=1.0`, `top_p=0.95`, `top_k=20`, `min_p=0.0`, `presence_penalty=1.5`, `repetition_penalty=1.0`
+   - **Thinking mode for precise coding tasks**: `temperature=0.6`, `top_p=0.95`, `top_k=20`, `min_p=0.0`, `presence_penalty=0.0`, `repetition_penalty=1.0`
+   - **Instruct mode for general tasks**: `temperature=0.7`, `top_p=0.8`, `top_k=20`, `min_p=0.0`, `presence_penalty=1.5`, `repetition_penalty=1.0`
+   - **Instruct mode for reasoning tasks**: `temperature=1.0`, `top_p=0.95`, `top_k=20`, `min_p=0.0`, `presence_penalty=1.5`, `repetition_penalty=1.0`
 3. **Configure thinking mode** by setting `chat_template_kwargs.enable_thinking`:
-   - `enable_thinking=true` for thinking mode
-   - `enable_thinking=false` for instant mode
+   - `enable_thinking=true` for thinking modes (general and coding)
+   - `enable_thinking=false` for instruct modes (general and reasoning)
 4. **Rewrite the model name** to the actual backend model name (e.g., `Qwen/Qwen3.5-397B-A17B-FP8`) before forwarding to vLLM
 5. **Fix vLLM response bugs** where non-thinking, non-streaming responses incorrectly place content in `reasoning_content` or `reasoning` fields instead of `content`
 
@@ -30,8 +32,10 @@ go build -o qwen35-rp .
 ./qwen35-rp \
   -target "http://127.0.0.1:8000" \
   -served-model "Qwen/Qwen3.5-397B-A17B-FP8" \
-  -thinking-model "qwen-thinking" \
-  -no-thinking-model "qwen-no-thinking"
+  -thinking-general "qwen-thinking-general" \
+  -thinking-coding "qwen-thinking-coding" \
+  -instruct-general "qwen-instruct-general" \
+  -instruct-reasoning "qwen-instruct-reasoning"
 ```
 
 Or using environment variables:
@@ -39,8 +43,10 @@ Or using environment variables:
 ```bash
 export QWEN35RP_TARGET="http://127.0.0.1:8000"
 export QWEN35RP_SERVED_MODEL_NAME="Qwen/Qwen3.5-397B-A17B-FP8"
-export QWEN35RP_THINKING_MODEL_NAME="qwen-thinking"
-export QWEN35RP_NO_THINKING_MODEL_NAME="qwen-no-thinking"
+export QWEN35RP_THINKING_GENERAL_MODEL="qwen-thinking-general"
+export QWEN35RP_THINKING_CODING_MODEL="qwen-thinking-coding"
+export QWEN35RP_INSTRUCT_GENERAL_MODEL="qwen-instruct-general"
+export QWEN35RP_INSTRUCT_REASONING_MODEL="qwen-instruct-reasoning"
 ./qwen35-rp
 ```
 
@@ -55,8 +61,10 @@ Configure the proxy using command-line flags or environment variables:
 | `-target` | `QWEN35RP_TARGET` | `http://127.0.0.1:8000` | Backend target URL |
 | `-loglevel` | `QWEN35RP_LOGLEVEL` | `INFO` | Log level (COMPLETE, DEBUG, INFO, WARN, ERROR) |
 | `-served-model` | `QWEN35RP_SERVED_MODEL_NAME` | (required) | Backend model name to use in outgoing requests |
-| `-thinking-model` | `QWEN35RP_THINKING_MODEL_NAME` | (required) | Name of the thinking model (incoming request identifier) |
-| `-no-thinking-model` | `QWEN35RP_NO_THINKING_MODEL_NAME` | (required) | Name of the non-thinking model (incoming request identifier) |
+| `-thinking-general` | `QWEN35RP_THINKING_GENERAL_MODEL` | (required) | Name of the thinking-general model (incoming request identifier) |
+| `-thinking-coding` | `QWEN35RP_THINKING_CODING_MODEL` | (required) | Name of the thinking-coding model (incoming request identifier) |
+| `-instruct-general` | `QWEN35RP_INSTRUCT_GENERAL_MODEL` | (required) | Name of the instruct-general model (incoming request identifier) |
+| `-instruct-reasoning` | `QWEN35RP_INSTRUCT_REASONING_MODEL` | (required) | Name of the instruct-reasoning model (incoming request identifier) |
 | `-enforce-sampling-params` | `QWEN35RP_ENFORCE_SAMPLING_PARAMS` | `false` | Enforce sampling parameters, overriding client-provided values |
 
 ### Enforce Sampling Parameters
@@ -109,7 +117,7 @@ After=network.target
 Type=notify
 User=qwen35-rp
 Group=qwen35-rp
-ExecStart=/usr/local/bin/qwen35-rp -served-model "Qwen/Qwen3.5-397B-A17B-FP8" -thinking-model "qwen-thinking" -no-thinking-model "qwen-instant"
+ExecStart=/usr/local/bin/qwen35-rp -served-model "Qwen/Qwen3.5-397B-A17B-FP8" -thinking-general "qwen-thinking-general" -thinking-coding "qwen-thinking-coding" -instruct-general "qwen-instruct-general" -instruct-reasoning "qwen-instruct-reasoning"
 Restart=on-failure
 Environment=QWEN35RP_LOGLEVEL=INFO
 

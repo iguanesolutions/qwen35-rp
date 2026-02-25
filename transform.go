@@ -15,7 +15,17 @@ import (
 )
 
 var (
-	thinkSamplingParams = map[string]any{
+	// Thinking mode for general tasks
+	thinkingGeneralParams = map[string]any{
+		"temperature":        1.0,
+		"top_p":              0.95,
+		"top_k":              20,
+		"min_p":              0.0,
+		"presence_penalty":   1.5,
+		"repetition_penalty": 1.0,
+	}
+	// Thinking mode for precise coding tasks
+	thinkingCodingParams = map[string]any{
 		"temperature":        0.6,
 		"top_p":              0.95,
 		"top_k":              20,
@@ -23,9 +33,19 @@ var (
 		"presence_penalty":   0.0,
 		"repetition_penalty": 1.0,
 	}
-	noThinkSamplingParams = map[string]any{
+	// Instruct mode for general tasks
+	instructGeneralParams = map[string]any{
 		"temperature":        0.7,
 		"top_p":              0.8,
+		"top_k":              20,
+		"min_p":              0.0,
+		"presence_penalty":   1.5,
+		"repetition_penalty": 1.0,
+	}
+	// Instruct mode for reasoning tasks
+	instructReasoningParams = map[string]any{
+		"temperature":        1.0,
+		"top_p":              0.95,
 		"top_k":              20,
 		"min_p":              0.0,
 		"presence_penalty":   1.5,
@@ -34,7 +54,7 @@ var (
 )
 
 func transform(httpCli *http.Client, target *url.URL,
-	servedModel, thinkingModel, noThinkingModel string, enforceSamplingParams bool) http.HandlerFunc {
+	servedModel, thinkingGeneral, thinkingCoding, instructGeneral, instructReasoning string, enforceSamplingParams bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Track thinking mode and streaming for response fixing
 		var think, stream bool
@@ -73,12 +93,18 @@ func transform(httpCli *http.Client, target *url.URL,
 		}
 		// check thinking mode based on model name and apply sampling parameters
 		switch modelName {
-		case thinkingModel:
+		case thinkingGeneral:
 			think = true
-			applySamplingParams(data, thinkSamplingParams, logger, enforceSamplingParams)
-		case noThinkingModel:
+			applySamplingParams(data, thinkingGeneralParams, logger, enforceSamplingParams)
+		case thinkingCoding:
+			think = true
+			applySamplingParams(data, thinkingCodingParams, logger, enforceSamplingParams)
+		case instructGeneral:
 			think = false
-			applySamplingParams(data, noThinkSamplingParams, logger, enforceSamplingParams)
+			applySamplingParams(data, instructGeneralParams, logger, enforceSamplingParams)
+		case instructReasoning:
+			think = false
+			applySamplingParams(data, instructReasoningParams, logger, enforceSamplingParams)
 		default:
 			logger.Error("unsupported model", slog.String("model", modelName))
 			httpError(ctx, w, http.StatusBadRequest)
