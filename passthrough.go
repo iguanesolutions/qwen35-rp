@@ -24,6 +24,7 @@ func passthrough(httpCli *http.Client, target *url.URL) http.HandlerFunc {
 		// Create the outgoing request
 		outreq := r.Clone(ctx)
 		rewriteRequestURL(outreq, target)
+		outreq.RequestURI = "" // Clear RequestURI for client request
 		// Send the request
 		outResp, err := httpCli.Do(outreq)
 		if err != nil {
