@@ -89,15 +89,31 @@ func transform(httpCli *http.Client, target *url.URL,
 		switch modelName {
 		case thinkingGeneral:
 			think = true
+			logger.Info("model matched",
+				slog.String("type", "thinking_general"),
+				slog.String("virtual_model", modelName),
+			)
 			applySamplingParams(data, thinkingGeneralParams, logger, enforceSamplingParams)
 		case thinkingCoding:
 			think = true
+			logger.Info("model matched",
+				slog.String("type", "thinking_coding"),
+				slog.String("virtual_model", modelName),
+			)
 			applySamplingParams(data, thinkingCodingParams, logger, enforceSamplingParams)
 		case instructGeneral:
 			think = false
+			logger.Info("model matched",
+				slog.String("type", "instruct_general"),
+				slog.String("virtual_model", modelName),
+			)
 			applySamplingParams(data, instructGeneralParams, logger, enforceSamplingParams)
 		case instructReasoning:
 			think = false
+			logger.Info("model matched",
+				slog.String("type", "instruct_reasoning"),
+				slog.String("virtual_model", modelName),
+			)
 			applySamplingParams(data, instructReasoningParams, logger, enforceSamplingParams)
 		default:
 			logger.Error("unsupported model", slog.String("model", modelName))
