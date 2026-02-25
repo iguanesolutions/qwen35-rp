@@ -17,6 +17,7 @@ This proxy's primary purpose is to:
    - `enable_thinking=false` for instruct modes (general and reasoning)
 4. **Rewrite the model name** to the actual backend model name (e.g., `Qwen/Qwen3.5-397B-A17B-FP8`) before forwarding to vLLM
 5. **Fix vLLM response bugs** where non-thinking, non-streaming responses incorrectly place content in `reasoning_content` or `reasoning` fields instead of `content`
+6. **Enrich `/v1/models` endpoint** by fetching backend models and exposing 4 virtual models with the same metadata (permissions, max_model_len, etc.)
 
 ## Installation
 
@@ -73,6 +74,7 @@ By default, the proxy only sets sampling parameters if they are not already pres
 
 ## Request Routing
 
+- **`GET /v1/models`**: Enriched (fetches backend models, validates served model, exposes 4 virtual models)
 - **`POST /v1/chat/completions`**: Transformed (sampling params + thinking mode applied)
 - **`POST /v1/completions`**: Transformed (sampling params + thinking mode applied)
 - **All other paths**: Passed through unchanged to the backend

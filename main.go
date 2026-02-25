@@ -59,6 +59,10 @@ func main() {
 	})
 	// Create pooled HTTP client for forwarding requests
 	httpClient := cleanhttp.DefaultPooledClient()
+	// Models endpoint handler (enriches backend models with virtual model names)
+	http.HandleFunc("GET /v1/models", httplogger.LogFunc(
+		models(httpClient, backendURL, cfg.ServedModelName, cfg.ThinkingGeneralModel, cfg.ThinkingCodingModel, cfg.InstructGeneralModel, cfg.InstructReasoningModel),
+	))
 	// Health check endpoints (not logged)
 	http.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
