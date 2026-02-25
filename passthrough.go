@@ -15,11 +15,6 @@ func passthrough(httpCli *http.Client, target *url.URL) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Prepare
 		logger := logger.With(httplog.GetReqIDSLogAttr(r.Context()))
-		logger.Debug("passthrough request",
-			slog.String("remote_addr", r.RemoteAddr),
-			slog.String("method", r.Method),
-			slog.String("path", r.URL.Path),
-		)
 		ctx := r.Context()
 		// Create the outgoing request
 		outreq := r.Clone(ctx)

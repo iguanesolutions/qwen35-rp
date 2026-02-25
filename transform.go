@@ -56,16 +56,10 @@ var (
 func transform(httpCli *http.Client, target *url.URL,
 	servedModel, thinkingGeneral, thinkingCoding, instructGeneral, instructReasoning string, enforceSamplingParams bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Track thinking mode and streaming for response fixing
-		var think, stream bool
 		// Prepare
 		logger := logger.With(httplog.GetReqIDSLogAttr(r.Context()))
-		logger.Info("received a request",
-			slog.String("remote_addr", r.RemoteAddr),
-			slog.String("method", r.Method),
-			slog.String("path", r.URL.Path),
-		)
 		ctx := r.Context()
+		var think, stream bool // Track thinking mode and streaming for response fixing
 		// Read request body
 		requestBody, err := io.ReadAll(r.Body)
 		if err != nil {
