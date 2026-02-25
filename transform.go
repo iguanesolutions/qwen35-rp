@@ -156,26 +156,37 @@ func transform(httpCli *http.Client, target *url.URL,
 		}
 		defer outResp.Body.Close()
 
-		// Read response body
-		responseBody, err := io.ReadAll(outResp.Body)
-		if err != nil {
-			logger.Error("failed to read response body", slog.String("error", err.Error()))
-			httpError(ctx, w, http.StatusInternalServerError)
-			return
-		}
-
-		// Fix vLLM bug: non-thinking, non-streaming responses incorrectly placed in reasoning_content/reasoning fields
-		responseBody = fixVLLMResponse(responseBody, think, stream, logger)
-
+		// Copy headers from upstream response
 		for header, values := range outResp.Header {
 			for _, value := range values {
 				w.Header().Add(header, value)
 			}
 		}
-		w.Header().Set("Content-Length", strconv.Itoa(len(responseBody)))
-		w.WriteHeader(outResp.StatusCode)
-		if _, err = w.Write(responseBody); err != nil {
-			logger.Error("failed to write response", slog.String("error", err.Error()))
+
+		if stream {
+			// Streaming mode: proxy response body directly without buffering
+			logger.Debug("streaming response to client")
+			w.WriteHeader(outResp.StatusCode)
+			if _, err = io.Copy(w, outResp.Body); err != nil {
+				logger.Error("failed to stream response", slog.String("error", err.Error()))
+			}
+		} else {
+			// Non-streaming mode: read full response, fix vLLM bug, then write
+			responseBody, err := io.ReadAll(outResp.Body)
+			if err != nil {
+				logger.Error("failed to read response body", slog.String("error", err.Error()))
+				httpError(ctx, w, http.StatusInternalServerError)
+				return
+			}
+
+			// Fix vLLM bug: non-thinking, non-streaming responses incorrectly placed in reasoning_content/reasoning fields
+			responseBody = fixVLLMResponse(responseBody, think, stream, logger)
+
+			w.Header().Set("Content-Length", strconv.Itoa(len(responseBody)))
+			w.WriteHeader(outResp.StatusCode)
+			if _, err = w.Write(responseBody); err != nil {
+				logger.Error("failed to write response", slog.String("error", err.Error()))
+			}
 		}
 	}
 }
