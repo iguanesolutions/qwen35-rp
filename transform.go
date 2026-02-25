@@ -110,7 +110,9 @@ func transform(httpCli *http.Client, target *url.URL,
 			httpError(ctx, w, http.StatusBadRequest)
 			return
 		}
-		// override model name
+		// Track the virtual model name requested by client (before override)
+		virtualModel := modelName
+		// override model name for backend
 		data["model"] = servedModel
 		// set thinking extra body parameter
 		kwargs, ok := data["chat_template_kwargs"]
@@ -156,7 +158,6 @@ func transform(httpCli *http.Client, target *url.URL,
 		}
 		defer outResp.Body.Close()
 
-		// Copy headers from upstream response
 		for header, values := range outResp.Header {
 			for _, value := range values {
 				w.Header().Add(header, value)
@@ -164,14 +165,14 @@ func transform(httpCli *http.Client, target *url.URL,
 		}
 
 		if stream {
-			// Streaming mode: proxy response body directly without buffering
-			logger.Debug("streaming response to client")
+			// Streaming mode: proxy response body with model name fixing
+			logger.Debug("streaming response to client with model name fix")
 			w.WriteHeader(outResp.StatusCode)
-			if _, err = io.Copy(w, outResp.Body); err != nil {
+			if err = streamResponse(w, outResp.Body, virtualModel, logger); err != nil {
 				logger.Error("failed to stream response", slog.String("error", err.Error()))
 			}
 		} else {
-			// Non-streaming mode: read full response, fix vLLM bug, then write
+			// Non-streaming mode: read full response, fix bugs, then write
 			responseBody, err := io.ReadAll(outResp.Body)
 			if err != nil {
 				logger.Error("failed to read response body", slog.String("error", err.Error()))
@@ -181,6 +182,9 @@ func transform(httpCli *http.Client, target *url.URL,
 
 			// Fix vLLM bug: non-thinking, non-streaming responses incorrectly placed in reasoning_content/reasoning fields
 			responseBody = fixVLLMResponse(responseBody, think, stream, logger)
+
+			// Fix model name in response: replace backend model with virtual model name
+			responseBody = fixModelName(responseBody, virtualModel, logger)
 
 			w.Header().Set("Content-Length", strconv.Itoa(len(responseBody)))
 			w.WriteHeader(outResp.StatusCode)
@@ -294,4 +298,133 @@ func fixVLLMResponse(responseBody []byte, think, stream bool, logger *slog.Logge
 	}
 
 	return responseBody
+}
+
+// fixModelName replaces the backend model name with the virtual model name
+// that the client originally requested
+func fixModelName(responseBody []byte, virtualModel string, logger *slog.Logger) []byte {
+	// Try to parse the response as JSON
+	var data map[string]any
+	if err := json.Unmarshal(responseBody, &data); err != nil {
+		// Not valid JSON, return as-is
+		return responseBody
+	}
+
+	// Check if model field exists and replace it
+	if _, ok := data["model"]; ok {
+		logger.Debug("fixing model name in response",
+			slog.String("original", data["model"].(string)),
+			slog.String("replacement", virtualModel),
+		)
+		data["model"] = virtualModel
+
+		// Re-marshal the response
+		fixedBody, err := json.Marshal(data)
+		if err != nil {
+			logger.Error("failed to marshal response with fixed model name", slog.Any("error", err))
+			return responseBody
+		}
+		return fixedBody
+	}
+
+	return responseBody
+}
+
+// streamResponse streams SSE events from backend to client, fixing model name in all events
+func streamResponse(w http.ResponseWriter, backendBody io.ReadCloser, virtualModel string, logger *slog.Logger) error {
+	buf := make([]byte, 0, 4096)
+	temp := make([]byte, 4096)
+
+	for {
+		n, err := backendBody.Read(temp)
+		if n > 0 {
+			buf = append(buf, temp[:n]...)
+		}
+		if err != nil {
+			if err == io.EOF {
+				// Write any remaining data
+				if len(buf) > 0 {
+					if _, werr := w.Write(buf); werr != nil {
+						return werr
+					}
+				}
+				return nil
+			}
+			return err
+		}
+
+		// Process complete SSE events (separated by double newline)
+		for {
+			idx := bytes.Index(buf, []byte("\n\n"))
+			if idx == -1 {
+				break // Need more data
+			}
+
+			event := buf[:idx+2] // Include the \n\n
+			buf = buf[idx+2:]
+
+			// Fix model name in ALL data events (backend includes model in every chunk)
+			if bytes.HasPrefix(event, []byte("data: ")) {
+				event = fixModelNameInSSE(event, virtualModel, logger)
+			}
+
+			if _, werr := w.Write(event); werr != nil {
+				return werr
+			}
+		}
+
+		// Prevent buffer from growing too large
+		if len(buf) > 8192 {
+			if _, werr := w.Write(buf); werr != nil {
+				return werr
+			}
+			buf = buf[:0]
+		}
+	}
+}
+
+// fixModelNameInSSE fixes the model field in an SSE data event
+func fixModelNameInSSE(event []byte, virtualModel string, logger *slog.Logger) []byte {
+	// Extract JSON part (after "data: ")
+	if !bytes.HasPrefix(event, []byte("data: ")) {
+		return event
+	}
+
+	jsonPart := event[6:] // Skip "data: "
+	jsonPart = bytes.TrimSpace(jsonPart)
+
+	// Skip [DONE] or empty events
+	if len(jsonPart) == 0 || bytes.Equal(jsonPart, []byte("[DONE]")) {
+		return event
+	}
+
+	// Try to parse and fix
+	var data map[string]any
+	if err := json.Unmarshal(jsonPart, &data); err != nil {
+		// Not valid JSON, return original
+		return event
+	}
+
+	// Fix model field if present
+	if _, ok := data["model"]; ok {
+		if modelStr, ok := data["model"].(string); ok {
+			logger.Debug("fixing model name in streaming event",
+				slog.String("original", modelStr),
+				slog.String("replacement", virtualModel),
+			)
+			data["model"] = virtualModel
+
+			// Re-marshal
+			fixedJSON, err := json.Marshal(data)
+			if err != nil {
+				logger.Error("failed to marshal streaming event", slog.Any("error", err))
+				return event
+			}
+
+			// Reconstruct SSE event
+			return append([]byte("data: "), append(fixedJSON, []byte("\n\n")...)...)
+		}
+	}
+
+	return event
 }

@@ -59,6 +59,13 @@ func main() {
 	})
 	// Create pooled HTTP client for forwarding requests
 	httpClient := cleanhttp.DefaultPooledClient()
+	// Explicit handlers for POST paths that need transformation
+	http.HandleFunc("POST /v1/chat/completions", httplogger.LogFunc(
+		transform(httpClient, backendURL, cfg.ServedModelName, cfg.ThinkingGeneralModel, cfg.ThinkingCodingModel, cfg.InstructGeneralModel, cfg.InstructReasoningModel, cfg.EnforceSamplingParams),
+	))
+	http.HandleFunc("POST /v1/completions", httplogger.LogFunc(
+		transform(httpClient, backendURL, cfg.ServedModelName, cfg.ThinkingGeneralModel, cfg.ThinkingCodingModel, cfg.InstructGeneralModel, cfg.InstructReasoningModel, cfg.EnforceSamplingParams),
+	))
 	// Models endpoint handler (enriches backend models with virtual model names)
 	http.HandleFunc("GET /v1/models", httplogger.LogFunc(
 		models(httpClient, backendURL, cfg.ServedModelName, cfg.ThinkingGeneralModel, cfg.ThinkingCodingModel, cfg.InstructGeneralModel, cfg.InstructReasoningModel),
@@ -69,18 +76,6 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"healthy"}`))
 	})
-	http.HandleFunc("GET /ready", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ready"}`))
-	})
-	// Explicit handlers for POST paths that need transformation
-	http.HandleFunc("POST /v1/chat/completions", httplogger.LogFunc(
-		transform(httpClient, backendURL, cfg.ServedModelName, cfg.ThinkingGeneralModel, cfg.ThinkingCodingModel, cfg.InstructGeneralModel, cfg.InstructReasoningModel, cfg.EnforceSamplingParams),
-	))
-	http.HandleFunc("POST /v1/completions", httplogger.LogFunc(
-		transform(httpClient, backendURL, cfg.ServedModelName, cfg.ThinkingGeneralModel, cfg.ThinkingCodingModel, cfg.InstructGeneralModel, cfg.InstructReasoningModel, cfg.EnforceSamplingParams),
-	))
 	// Catch-all for all other paths (passthrough)
 	http.HandleFunc("/", httplogger.LogFunc(passthrough(httpClient, backendURL)))
 

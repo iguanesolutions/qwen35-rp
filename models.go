@@ -17,13 +17,16 @@ func models(httpCli *http.Client, target *url.URL, servedModel, thinkingGeneral,
 		logger := logger.With(httplog.GetReqIDSLogAttr(ctx))
 		logger.Debug("handling /v1/models request")
 
-		// Create request to backend
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String()+"/v1/models", nil)
+		// Create request to backend (clone to copy all headers from incoming request)
+		req := r.Clone(ctx)
+		var err error
+		req.URL, err = url.Parse(target.String() + "/v1/models")
 		if err != nil {
-			logger.Error("failed to create models request", slog.Any("error", err))
+			logger.Error("failed to parse models URL", slog.Any("error", err))
 			httpError(ctx, w, http.StatusInternalServerError)
 			return
 		}
+		req.RequestURI = "" // Clear RequestURI for client request
 
 		// Send request to backend
 		resp, err := httpCli.Do(req)
