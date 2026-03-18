@@ -18,6 +18,7 @@ This proxy's primary purpose is to:
 4. **Rewrite the model name** to the actual backend model name (e.g., `Qwen/Qwen3.5-397B-A17B-FP8`) before forwarding to vLLM
 5. **Fix vLLM response bugs** where non-thinking, non-streaming responses incorrectly place content in `reasoning_content` or `reasoning` fields instead of `content`
 6. **Enrich `/v1/models` endpoint** by fetching backend models and exposing 4 virtual models with the same metadata (permissions, max_model_len, etc.)
+7. **Provide OpenAI Responses API compatibility** (`/v1/responses`) by converting requests to Chat Completions format and responses back to Responses format, enabling clients using the newer Responses API to work with Chat Completions-only backends
 
 ## Installation
 
@@ -75,9 +76,51 @@ By default, the proxy only sets sampling parameters if they are not already pres
 ## Request Routing
 
 - **`GET /v1/models`**: Enriched (fetches backend models, validates served model, exposes 4 virtual models)
+- **`POST /v1/responses`**: Converted (Responses API → Chat Completions, with full response conversion)
 - **`POST /v1/chat/completions`**: Transformed (sampling params + thinking mode applied)
 - **`POST /v1/completions`**: Transformed (sampling params + thinking mode applied)
 - **All other paths**: Passed through unchanged to the backend
+
+## Responses API Support
+
+The proxy provides full compatibility with OpenAI's [Responses API](https://platform.openai.com/docs/api-reference/responses), converting requests and responses to/from the Chat Completions API format.
+
+**Why convert instead of forwarding to vLLM's `/v1/responses` endpoint?**
+
+vLLM's Responses endpoint does not support `chat_template_kwargs`, which is required to control Qwen's thinking mode (`enable_thinking=true/false`). By converting to Chat Completions, we can properly configure thinking mode based on the selected profile.
+
+### Supported Features
+
+| Feature | Streaming | Non-Streaming |
+|---------|-----------|---------------|
+| Text generation | ✅ | ✅ |
+| Reasoning/thinking content | ✅ | ✅ |
+| Function/tool calls | ✅ | ✅ |
+| Usage tracking (billing) | ✅ | ✅ |
+| System instructions | ✅ | ✅ |
+| Multimodal input (images) | ✅ | ✅ |
+| Max output tokens / truncation | ✅ | ✅ |
+
+### Streaming Events
+
+The proxy emits standard Responses API streaming events:
+
+- `response.created`, `response.in_progress`
+- `response.output_item.added`, `response.output_item.done`
+- `response.content_part.added`, `response.content_part.done`
+- `response.output_text.delta`, `response.output_text.done`
+- `response.reasoning_text.delta`, `response.reasoning_text.done` (thinking mode)
+- `response.function_call_arguments.delta`, `response.function_call_arguments.done` (tool calls)
+- `response.completed`
+
+### vLLM Backend Requirements
+
+For full functionality, the vLLM backend should be started with the following flags:
+
+```bash
+--reasoning-parser=qwen3                                  # Required for thinking/reasoning mode
+--enable-auto-tool-choice --tool-call-parser=qwen3_coder  # Required for tool/function calls
+```
 
 ## Health Check
 
