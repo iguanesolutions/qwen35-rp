@@ -65,60 +65,51 @@ func LoadConfig() (Config, error) {
 	target := flag.String("target", "http://127.0.0.1:8000", "Backend target, default is for a local vLLM")
 	loglevel := flag.String("loglevel", slog.LevelInfo.String(), "Log level (COMPLETE, DEBUG, INFO, WARN, ERROR)")
 	servedModel := flag.String("served-model", "", "Name of the served model")
-	thinkingGeneral := flag.String("thinking-general", "", "Name of the thinking-general model")
-	thinkingCoding := flag.String("thinking-coding", "", "Name of the thinking-coding model")
-	instructGeneral := flag.String("instruct-general", "", "Name of the instruct-general model")
-	instructReasoning := flag.String("instruct-reasoning", "", "Name of the instruct-reasoning model")
+	thinkingGeneral := flag.String("thinking-general", "qwen3.5-thinking-general", "Name of the thinking-general model")
+	thinkingCoding := flag.String("thinking-coding", "qwen3.5-thinking-coding", "Name of the thinking-coding model")
+	instructGeneral := flag.String("instruct-general", "qwen3.5-instruct-general", "Name of the instruct-general model")
+	instructReasoning := flag.String("instruct-reasoning", "qwen3.5-instruct-reasoning", "Name of the instruct-reasoning model")
 	enforceSampling := flag.Bool("enforce-sampling-params", false, "Enforce sampling parameters, overriding client-provided values")
 
 	flag.Parse()
 
-	cfg.Listen = getEnvOrFlag(*listen, "QWEN35RP_LISTEN", "0.0.0.0")
-	cfg.Port = getEnvOrFlagInt(*port, "QWEN35RP_PORT", 9000)
-	cfg.Target = getEnvOrFlag(*target, "QWEN35RP_TARGET", "http://127.0.0.1:8000")
-	cfg.LogLevel = getEnvOrFlag(*loglevel, "QWEN35RP_LOGLEVEL", slog.LevelInfo.String())
-	cfg.ServedModelName = getEnvOrFlag(*servedModel, "QWEN35RP_SERVED_MODEL_NAME", "")
-	cfg.ThinkingGeneralModel = getEnvOrFlag(*thinkingGeneral, "QWEN35RP_THINKING_GENERAL_MODEL", "")
-	cfg.ThinkingCodingModel = getEnvOrFlag(*thinkingCoding, "QWEN35RP_THINKING_CODING_MODEL", "")
-	cfg.InstructGeneralModel = getEnvOrFlag(*instructGeneral, "QWEN35RP_INSTRUCT_GENERAL_MODEL", "")
-	cfg.InstructReasoningModel = getEnvOrFlag(*instructReasoning, "QWEN35RP_INSTRUCT_REASONING_MODEL", "")
-	cfg.EnforceSamplingParams = getEnvOrFlagBool(*enforceSampling, "QWEN35RP_ENFORCE_SAMPLING_PARAMS", false)
+	cfg.Listen = getEnvOrFlag(*listen, "QWEN35RP_LISTEN")
+	cfg.Port = getEnvOrFlagInt(*port, "QWEN35RP_PORT")
+	cfg.Target = getEnvOrFlag(*target, "QWEN35RP_TARGET")
+	cfg.LogLevel = getEnvOrFlag(*loglevel, "QWEN35RP_LOGLEVEL")
+	cfg.ServedModelName = getEnvOrFlag(*servedModel, "QWEN35RP_SERVED_MODEL_NAME")
+	cfg.ThinkingGeneralModel = getEnvOrFlag(*thinkingGeneral, "QWEN35RP_THINKING_GENERAL_MODEL")
+	cfg.ThinkingCodingModel = getEnvOrFlag(*thinkingCoding, "QWEN35RP_THINKING_CODING_MODEL")
+	cfg.InstructGeneralModel = getEnvOrFlag(*instructGeneral, "QWEN35RP_INSTRUCT_GENERAL_MODEL")
+	cfg.InstructReasoningModel = getEnvOrFlag(*instructReasoning, "QWEN35RP_INSTRUCT_REASONING_MODEL")
+	cfg.EnforceSamplingParams = getEnvOrFlagBool(*enforceSampling, "QWEN35RP_ENFORCE_SAMPLING_PARAMS")
 
 	return cfg, cfg.Validate()
 }
 
-func getEnvOrFlag(flagVal string, envName string, defaultVal string) string {
-	if envVal := os.Getenv(envName); envVal != "" {
+func getEnvOrFlag(flagVal string, envName string) string {
+	if envVal, exists := os.LookupEnv(envName); exists {
 		return envVal
 	}
-	if flagVal != "" {
-		return flagVal
-	}
-	return defaultVal
+	return flagVal
 }
 
-func getEnvOrFlagInt(flagVal int, envName string, defaultVal int) int {
-	if envVal := os.Getenv(envName); envVal != "" {
+func getEnvOrFlagInt(flagVal int, envName string) int {
+	if envVal, exists := os.LookupEnv(envName); exists {
 		if intVal, err := strconv.Atoi(envVal); err == nil {
 			return intVal
 		}
 	}
-	if flagVal != defaultVal {
-		return flagVal
-	}
-	return defaultVal
+	return flagVal
 }
 
-func getEnvOrFlagBool(flagVal bool, envName string, defaultVal bool) bool {
-	if envVal := os.Getenv(envName); envVal != "" {
+func getEnvOrFlagBool(flagVal bool, envName string) bool {
+	if envVal, exists := os.LookupEnv(envName); exists {
 		if boolVal, err := strconv.ParseBool(envVal); err == nil {
 			return boolVal
 		}
 	}
-	if flagVal != defaultVal {
-		return flagVal
-	}
-	return defaultVal
+	return flagVal
 }
 
 // parseLogLevel parses a log level string, including the COMPLETE level
