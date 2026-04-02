@@ -38,47 +38,43 @@ func tokenize(httpCli *http.Client, target *url.URL,
 			return
 		}
 
-		// Parse request body
-		var reqData map[string]any
-		err = json.Unmarshal(requestBody, &reqData)
+		// Parse request body into typed struct
+		var req TokenizeMessagesRequest
+		err = json.Unmarshal(requestBody, &req)
 		if err != nil {
 			logger.Error("failed to parse body as JSON", slog.String("error", err.Error()))
 			httpError(ctx, w, http.StatusBadRequest)
 			return
 		}
 
-		// Extract and validate model
-		modelName, ok := reqData["model"].(string)
-		if !ok || modelName == "" {
-			logger.Error("missing/invalid model in request body")
-			httpError(ctx, w, http.StatusBadRequest)
-			return
-		}
-
 		// Validate messages is present
-		if reqData["messages"] == nil {
+		if len(req.Messages) == 0 {
 			logger.Error("missing messages in request body")
 			httpError(ctx, w, http.StatusBadRequest)
 			return
 		}
 
 		// Check if messages need conversion from Responses to Chat Completions format
-		messages, needsConversion := checkMessagesFormat(reqData["messages"], logger)
+		messages := req.Messages
+		needsConversion := false
+		if len(messages) > 0 {
+			messages, needsConversion = checkMessagesFormat(messages, logger)
+		}
 		if needsConversion {
 			logger.Info("converting messages from Responses to Chat Completions format")
 			// Convert messages using the same logic as responses.go
-			convertedMessages, err := convertMessagesToChatFormat(messages, reqData, logger)
+			convertedMessages, err := convertMessagesToChatFormat(messages, map[string]any{"instructions": ""}, logger)
 			if err != nil {
 				logger.Error("failed to convert messages", slog.Any("error", err))
 				httpError(ctx, w, http.StatusBadRequest)
 				return
 			}
-			reqData["messages"] = convertedMessages
+			req.Messages = convertedMessages
 
 			// Convert tools from Responses format to Chat Completions format
-			if tools, ok := reqData["tools"].([]any); ok && len(tools) > 0 {
-				chatTools := make([]map[string]any, 0, len(tools))
-				for _, tool := range tools {
+			if len(req.Tools) > 0 {
+				chatTools := make([]map[string]any, 0, len(req.Tools))
+				for _, tool := range req.Tools {
 					toolMap, ok := tool.(map[string]any)
 					if !ok {
 						continue
@@ -108,16 +104,36 @@ func tokenize(httpCli *http.Client, target *url.URL,
 					// Other tool types (web_search, file_search, etc.) are not supported by Chat Completions
 				}
 				if len(chatTools) > 0 {
-					reqData["tools"] = chatTools
+					// Convert []map[string]any to []any for assignment
+					toolsAsAny := make([]any, len(chatTools))
+					for i, t := range chatTools {
+						toolsAsAny[i] = t
+					}
+					req.Tools = toolsAsAny
 				}
 			}
 		}
 
-		// Override model name for backend
-		reqData["model"] = servedModel
+		// Build request to forward to vLLM
+		forwardReq := map[string]any{
+			"model":    servedModel,
+			"messages": req.Messages,
+		}
+		if req.AddGenerationPrompt {
+			forwardReq["add_generation_prompt"] = req.AddGenerationPrompt
+		}
+		if req.ReturnTokenStrings {
+			forwardReq["return_token_strs"] = req.ReturnTokenStrings
+		}
+		if len(req.ChatTemplateKwargs) > 0 {
+			forwardReq["chat_template_kwargs"] = req.ChatTemplateKwargs
+		}
+		if len(req.Tools) > 0 {
+			forwardReq["tools"] = req.Tools
+		}
 
 		// Marshal request body
-		requestBody, err = json.Marshal(reqData)
+		requestBody, err = json.Marshal(forwardReq)
 		if err != nil {
 			logger.Error("failed to marshal request body", slog.Any("error", err))
 			httpError(ctx, w, http.StatusInternalServerError)
