@@ -1,6 +1,6 @@
 # qwen35-rp
 
-Qwen 3.5 Reverse Proxy is a lightweight HTTP reverse proxy that automatically adjusts sampling parameters (temperature, top_p, etc.) and thinking mode based on one of four predefined profiles. It sits between your application and the backend LLM server serving Qwen 3.5 (e.g., vLLM).
+Qwen 3.5 Reverse Proxy is a lightweight HTTP reverse proxy that automatically adjusts sampling parameters (temperature, top_p, etc.) and thinking mode based on one of four predefined profiles. It sits between your application and the backend LLM server serving Qwen 3.5 (e.g., vLLM). It also provides a `/tokenize` endpoint for tokenizing messages using the backend's tokenizer.
 
 ## Core Functionality
 
@@ -17,8 +17,9 @@ This proxy's primary purpose is to:
    - `enable_thinking=false` for instruct modes (general and reasoning)
 4. **Rewrite the model name** to the actual backend model name (e.g., `Qwen/Qwen3.5-397B-A17B-FP8`) before forwarding to vLLM
 5. **Fix vLLM response bugs** where non-thinking, non-streaming responses incorrectly place content in `reasoning_content` or `reasoning` fields instead of `content`
-6. **Enrich `/v1/models` endpoint** by fetching backend models and exposing 4 virtual models with the same metadata (permissions, max_model_len, etc.)
-7. **Provide OpenAI Responses API compatibility** (`/v1/responses`) by converting requests to Chat Completions format and responses back to Responses format, enabling clients using the newer Responses API to work with Chat Completions-only backends
+7. **Enrich `/v1/models` endpoint** by fetching backend models and exposing 4 virtual models with the same metadata (permissions, max_model_len, etc.)
+8. **Provide OpenAI Responses API compatibility** (`/v1/responses`) by converting requests to Chat Completions format and responses back to Responses format. This conversion is necessary because only vLLM's Chat Completions endpoint supports `chat_template_kwargs`, which is required to control Qwen's thinking mode (`enable_thinking=true/false`)
+9. **Provide a `/tokenize` endpoint** for tokenizing messages and counting tokens before making actual generation requests
 
 ## Installation
 
@@ -79,6 +80,7 @@ By default, the proxy only sets sampling parameters if they are not already pres
 - **`POST /v1/responses`**: Converted (Responses API → Chat Completions, with full response conversion)
 - **`POST /v1/chat/completions`**: Transformed (sampling params + thinking mode applied)
 - **`POST /v1/completions`**: Transformed (sampling params + thinking mode applied)
+- **`POST /tokenize`**: Converted (Responses/Chat Completions → Chat Completions format, returns token count and token IDs)
 - **All other paths**: Passed through unchanged to the backend
 
 ## Responses API Support
@@ -87,7 +89,7 @@ The proxy provides full compatibility with OpenAI's [Responses API](https://plat
 
 **Why convert instead of forwarding to vLLM's `/v1/responses` endpoint?**
 
-vLLM's Responses endpoint does not support `chat_template_kwargs`, which is required to control Qwen's thinking mode (`enable_thinking=true/false`). By converting to Chat Completions, we can properly configure thinking mode based on the selected profile.
+Only vLLM's Chat Completions endpoint supports `chat_template_kwargs`, which is required to control Qwen's thinking mode (`enable_thinking=true/false`). By converting to Chat Completions, we can properly configure thinking mode based on the selected profile.
 
 ### Supported Features
 
@@ -121,6 +123,15 @@ For full functionality, the vLLM backend should be started with the following fl
 --reasoning-parser=qwen3                                  # Required for thinking/reasoning mode
 --enable-auto-tool-choice --tool-call-parser=qwen3_coder  # Required for tool/function calls
 ```
+
+## Tokenize API
+
+The proxy provides a `/tokenize` endpoint that forwards tokenization requests to the backend. When a request is sent in Responses API format (using the `messages` field with Responses-style message objects), the proxy applies the same format conversion as the `/v1/responses` endpoint:
+
+- **Message conversion**: Responses API format → Chat Completions format
+- **Tool conversion**: Responses tool format → Chat Completions tool format
+
+This ensures consistency: clients using the Responses API for generation requests can use the same format for tokenization, without needing to know the backend's expected format. The endpoint also supports multimodal inputs (images, etc.) in either format.
 
 ## Health Check
 
