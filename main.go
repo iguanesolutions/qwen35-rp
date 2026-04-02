@@ -60,6 +60,12 @@ func main() {
 	// Create pooled HTTP client for forwarding requests
 	httpClient := cleanhttp.DefaultPooledClient()
 	// Explicit handlers for POST paths that need transformation
+	http.HandleFunc("POST /tokenize", httplogger.LogFunc(
+		tokenize(httpClient, backendURL,
+			cfg.ServedModelName, cfg.ThinkingGeneralModel, cfg.ThinkingCodingModel,
+			cfg.InstructGeneralModel, cfg.InstructReasoningModel,
+		),
+	))
 	http.HandleFunc("POST /v1/responses", httplogger.LogFunc(
 		responses(httpClient, backendURL,
 			cfg.ServedModelName, cfg.ThinkingGeneralModel, cfg.ThinkingCodingModel,
