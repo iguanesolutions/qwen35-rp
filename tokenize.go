@@ -23,7 +23,12 @@ import (
 // flat tool definitions). Since vLLM's apply_chat_template expects Chat Completions
 // format, the proxy normalizes messages and tools before forwarding.
 // The prompt path is forwarded as-is — no normalization needed.
-func tokenize(httpCli *http.Client, target *url.URL, servedModel string) http.HandlerFunc {
+//
+// If the client provides a model name (virtual model), the proxy injects the matching
+// enable_thinking value into chat_template_kwargs for accurate token counting.
+// If no model is provided, chat_template_kwargs is passed through as-is.
+func tokenize(httpCli *http.Client, target *url.URL,
+	servedModel, thinkingGeneral, thinkingCoding, instructGeneral, instructReasoning string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logger := logger.With(httplog.GetReqIDSLogAttr(r.Context()))
 		ctx := r.Context()
@@ -67,6 +72,36 @@ func tokenize(httpCli *http.Client, target *url.URL, servedModel string) http.Ha
 			// Normalize tools to Chat Completions format (vLLM's apply_chat_template expects it)
 			if rawTools, ok := reqData["tools"].([]any); ok && len(rawTools) > 0 {
 				tools = normalizeTools(rawTools)
+			}
+			// If the client specified a virtual model, inject enable_thinking so the chat
+			// template renders the same way as a real completion request would.
+			if modelName, ok := reqData["model"].(string); ok && modelName != "" {
+				var think bool
+				var knownModel bool
+				switch modelName {
+				case thinkingGeneral, thinkingCoding:
+					think = true
+					knownModel = true
+				case instructGeneral, instructReasoning:
+					think = false
+					knownModel = true
+				default:
+					logger.Warn("unknown virtual model in tokenize request, skipping chat_template_kwargs injection",
+						slog.String("model", modelName),
+					)
+				}
+				if knownModel {
+					kwargs, hasKwargs := reqData["chat_template_kwargs"].(map[string]any)
+					if !hasKwargs {
+						kwargs = make(map[string]any)
+					}
+					kwargs["enable_thinking"] = think
+					reqData["chat_template_kwargs"] = kwargs
+					logger.Debug("injected enable_thinking into chat_template_kwargs",
+						slog.String("model", modelName),
+						slog.Bool("enable_thinking", think),
+					)
+				}
 			}
 
 		case reqData["prompt"] != nil:
