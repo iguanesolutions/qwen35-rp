@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"path"
 
 	"github.com/hekmon/httplog/v3"
 )
@@ -19,15 +20,9 @@ func models(httpCli *http.Client, target *url.URL, servedModel, thinkingGeneral,
 
 		// Create request to backend (clone to copy all headers from incoming request)
 		req := r.Clone(ctx)
+		rewriteRequestURL(req, target)
 		stripHopByHopHeaders(req)
-		var err error
-		req.URL, err = url.Parse(target.String() + "/v1/models")
-		if err != nil {
-			logger.Error("failed to parse models URL", slog.Any("error", err))
-			httpError(ctx, w, http.StatusInternalServerError)
-			return
-		}
-		req.Host = target.Host
+		req.URL.Path = path.Join(target.Path, "/v1/models")
 		req.RequestURI = "" // Clear RequestURI for client request
 
 		// Send request to backend

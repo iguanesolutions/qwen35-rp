@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -142,7 +143,7 @@ func responses(httpCli *http.Client, target *url.URL,
 		outreq := r.Clone(ctx)
 		rewriteRequestURL(outreq, target)
 		stripHopByHopHeaders(outreq)
-		outreq.URL.Path = "/v1/chat/completions"
+		outreq.URL.Path = path.Join(target.Path, "/v1/chat/completions")
 		outreq.Body = io.NopCloser(bytes.NewReader(requestBody))
 		outreq.ContentLength = int64(len(requestBody))
 		outreq.RequestURI = ""
