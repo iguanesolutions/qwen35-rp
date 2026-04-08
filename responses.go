@@ -793,8 +793,8 @@ func convertUsage(usage any) map[string]any {
 		respUsage["total_tokens"] = totalTokens
 	}
 
-	// Handle input_tokens_details
-	if inputDetails, ok := usageMap["input_tokens_details"].(map[string]any); ok {
+	// Handle input_tokens_details (Chat Completions calls this "prompt_tokens_details")
+	if inputDetails, ok := usageMap["prompt_tokens_details"].(map[string]any); ok {
 		respDetails := map[string]any{
 			"cached_tokens":          0,
 			"input_tokens_per_turn":  []any{},
@@ -812,8 +812,8 @@ func convertUsage(usage any) map[string]any {
 		respUsage["input_tokens_details"] = respDetails
 	}
 
-	// Handle output_tokens_details
-	if outputDetails, ok := usageMap["output_tokens_details"].(map[string]any); ok {
+	// Handle output_tokens_details (Chat Completions calls this "completion_tokens_details")
+	if outputDetails, ok := usageMap["completion_tokens_details"].(map[string]any); ok {
 		respDetails := map[string]any{
 			"reasoning_tokens":            0,
 			"tool_output_tokens":          0,
