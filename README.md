@@ -80,7 +80,7 @@ By default, the proxy only sets sampling parameters if they are not already pres
 - **`POST /v1/responses`**: Converted (Responses API → Chat Completions, with full response conversion)
 - **`POST /v1/chat/completions`**: Transformed (sampling params + thinking mode applied)
 - **`POST /v1/completions`**: Transformed (sampling params + thinking mode applied)
-- **`POST /tokenize`**: Converted (Responses/Chat Completions → Chat Completions format, returns token count and token IDs)
+- **`POST /tokenize`**: Tokenization (prompt passthrough or messages with content/tools normalization)
 - **All other paths**: Passed through unchanged to the backend
 
 ## Responses API Support
@@ -126,13 +126,10 @@ For full functionality, the vLLM backend should be started with the following fl
 
 ## Tokenize API
 
-The proxy provides a `/tokenize` endpoint that forwards tokenization requests to the backend. It accepts three input formats and normalizes them to Chat Completions format before forwarding to vLLM:
+The proxy provides a `/tokenize` endpoint that forwards tokenization requests to vLLM's `/tokenize`. Two modes:
 
-- **Chat Completions**: `{"messages": [...], "tools": [...]}` — passed through with content part normalization
-- **Responses API**: `{"input": "..." or [...], "instructions": "...", "tools": [...]}` — converted using the same logic as `/v1/responses`
-- **vLLM prompt**: `{"prompt": "..."}` — wrapped as a single user message
-
-This ensures consistency: clients using any format for generation requests can use the same format for tokenization, without needing to know the backend's expected format. The endpoint also supports multimodal inputs (images, etc.) in either format.
+- **`{"prompt": "..."}`** — raw text tokenization, forwarded as-is. No chat template is applied.
+- **`{"messages": [...], "tools": [...]}`** — vLLM applies the model's chat template (`apply_chat_template`) then tokenizes the result. Individual messages and tools can use either Chat Completions or Responses API formats (e.g. `input_text` content parts, flat tool definitions); the proxy normalizes everything to Chat Completions format before forwarding, since that's what `apply_chat_template` expects. Also supports `add_generation_prompt`, `return_token_strs`, and `chat_template_kwargs`.
 
 ## Health Check
 
