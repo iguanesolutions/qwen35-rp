@@ -1214,34 +1214,33 @@ func (s *responsesStreamState) convertChatSSEEventToResponses(chatEvent map[stri
 					tcState.Name = name
 				}
 
-				// Arguments delta (streamed)
+				// Emit output_item.added on first chunk (when we have ID and name)
+				if !tcState.Started && tcState.ID != "" && tcState.Name != "" {
+					tcState.Started = true
+					tcState.ItemID = fmt.Sprintf("fc_%s", generateSimpleID())
+					tcState.Index = s.outputIndex
+					s.outputIndex++
+
+					events = append(events, map[string]any{
+						"type":            "response.output_item.added",
+						"output_index":    tcState.Index,
+						"sequence_number": s.seqNum,
+						"item": map[string]any{
+							"id":        tcState.ItemID,
+							"type":      "function_call",
+							"call_id":   tcState.ID,
+							"name":      tcState.Name,
+							"arguments": "",
+							"status":    "in_progress",
+						},
+					})
+					s.seqNum++
+				}
+
+				// Arguments delta (streamed) — only emit when there's actual content
 				if args, ok := fn["arguments"].(string); ok && args != "" {
 					tcState.Arguments.WriteString(args)
 
-					// If this is the first chunk with data, emit output_item.added
-					if !tcState.Started {
-						tcState.Started = true
-						tcState.ItemID = fmt.Sprintf("fc_%s", generateSimpleID())
-						tcState.Index = s.outputIndex
-						s.outputIndex++
-
-						events = append(events, map[string]any{
-							"type":            "response.output_item.added",
-							"output_index":    tcState.Index,
-							"sequence_number": s.seqNum,
-							"item": map[string]any{
-								"id":        tcState.ItemID,
-								"type":      "function_call",
-								"call_id":   tcState.ID,
-								"name":      tcState.Name,
-								"arguments": "",
-								"status":    "in_progress",
-							},
-						})
-						s.seqNum++
-					}
-
-					// Emit arguments delta
 					events = append(events, map[string]any{
 						"type":            "response.function_call_arguments.delta",
 						"item_id":         tcState.ItemID,
