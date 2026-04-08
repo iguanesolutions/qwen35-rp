@@ -740,24 +740,35 @@ type toolCallState struct {
 	Started   bool
 }
 
+// responsesStreamState holds all mutable state for a streaming Responses API conversion
+type responsesStreamState struct {
+	responseID            string
+	itemID                string
+	virtualModel          string
+	outputIndex           int
+	contentIndex          int
+	hasReasoning          bool
+	reasoningItemID       string
+	reasoningContentIndex int
+	currentText           strings.Builder
+	reasoningText         strings.Builder
+	seqNum                int
+	lastUsage             map[string]any
+	messageStarted        bool
+	finishReason          string
+	toolCalls             map[int]*toolCallState
+	logger                *slog.Logger
+}
+
 // streamResponsesConverter converts Chat Completions SSE to Responses SSE
 func streamResponsesConverter(w http.ResponseWriter, backendBody io.ReadCloser, virtualModel string, logger *slog.Logger) error {
-	var (
-		responseID            = fmt.Sprintf("resp_%s", generateSimpleID())
-		itemID                = fmt.Sprintf("msg_%s", generateSimpleID())
-		outputIndex           = 0
-		contentIndex          = 0
-		hasReasoning          = false
-		reasoningItemID       = ""
-		reasoningContentIndex = 0
-		currentText           strings.Builder
-		reasoningText         strings.Builder
-		seqNum                = 0
-		lastUsage             map[string]any
-		messageStarted        = false
-		finishReason          = ""
-		toolCalls             = make(map[int]*toolCallState) // Track tool calls by index
-	)
+	s := &responsesStreamState{
+		responseID:   fmt.Sprintf("resp_%s", generateSimpleID()),
+		itemID:       fmt.Sprintf("msg_%s", generateSimpleID()),
+		virtualModel: virtualModel,
+		toolCalls:    make(map[int]*toolCallState),
+		logger:       logger,
+	}
 
 	now := time.Now().Unix()
 
@@ -765,20 +776,20 @@ func streamResponsesConverter(w http.ResponseWriter, backendBody io.ReadCloser, 
 	temp := make([]byte, 4096)
 
 	// Send initial response.created event
-	initialResp := buildInitialResponse(responseID, virtualModel, now, "in_progress")
+	initialResp := buildInitialResponse(s.responseID, s.virtualModel, now, "in_progress")
 	sendSSEEvent(w, map[string]any{
 		"type":            "response.created",
 		"response":        initialResp,
-		"sequence_number": seqNum,
-	}, logger)
-	seqNum++
+		"sequence_number": s.seqNum,
+	}, s.logger)
+	s.seqNum++
 
 	sendSSEEvent(w, map[string]any{
 		"type":            "response.in_progress",
 		"response":        initialResp,
-		"sequence_number": seqNum,
-	}, logger)
-	seqNum++
+		"sequence_number": s.seqNum,
+	}, s.logger)
+	s.seqNum++
 
 	for {
 		n, err := backendBody.Read(temp)
@@ -789,19 +800,19 @@ func streamResponsesConverter(w http.ResponseWriter, backendBody io.ReadCloser, 
 			if err == io.EOF {
 				// Process any remaining buffer
 				if len(buf) > 0 {
-					processChatSSEBuffer(buf, &lastUsage, &finishReason, &currentText, &reasoningText, logger)
+					s.processChatSSEBuffer(buf)
 				}
 
 				// Send completion events before response.completed
-				sendCompletionEvents(w, &seqNum, hasReasoning, reasoningItemID, itemID, outputIndex, messageStarted, currentText.String(), reasoningText.String(), toolCalls, logger)
+				s.sendCompletionEvents(w)
 
 				// Send final completed event
-				finalResp := buildFinalResponse(responseID, itemID, reasoningItemID, virtualModel, now, currentText.String(), reasoningText.String(), lastUsage, finishReason, toolCalls)
+				finalResp := buildFinalResponse(s.responseID, s.itemID, s.reasoningItemID, s.virtualModel, now, s.currentText.String(), s.reasoningText.String(), s.lastUsage, s.finishReason, s.toolCalls)
 				sendSSEEvent(w, map[string]any{
 					"type":            "response.completed",
 					"response":        finalResp,
-					"sequence_number": seqNum,
-				}, logger)
+					"sequence_number": s.seqNum,
+				}, s.logger)
 
 				return nil
 			}
@@ -831,18 +842,18 @@ func streamResponsesConverter(w http.ResponseWriter, backendBody io.ReadCloser, 
 
 				// Capture usage and finish_reason from chunk
 				if usage, ok := chatEvent["usage"].(map[string]any); ok {
-					lastUsage = usage
+					s.lastUsage = usage
 				}
 				if choices, ok := chatEvent["choices"].([]any); ok && len(choices) > 0 {
 					if choice, ok := choices[0].(map[string]any); ok {
 						if fr, ok := choice["finish_reason"].(string); ok && fr != "" {
-							finishReason = fr
+							s.finishReason = fr
 						}
 					}
 				}
 
 				// Convert Chat event to Responses events
-				respEvents := convertChatSSEEventToResponses(chatEvent, responseID, itemID, &outputIndex, &contentIndex, &hasReasoning, &reasoningItemID, &reasoningContentIndex, &seqNum, virtualModel, &currentText, &reasoningText, &messageStarted, toolCalls, logger)
+				respEvents := s.convertChatSSEEventToResponses(chatEvent)
 
 				for _, respEvent := range respEvents {
 					if _, werr := fmt.Fprintf(w, "data: %s\n\n", mustMarshal(respEvent)); werr != nil {
@@ -858,7 +869,7 @@ func streamResponsesConverter(w http.ResponseWriter, backendBody io.ReadCloser, 
 }
 
 // processChatSSEBuffer processes remaining buffer data at end of stream
-func processChatSSEBuffer(buf []byte, lastUsage *map[string]any, finishReason *string, currentText, reasoningText *strings.Builder, logger *slog.Logger) {
+func (s *responsesStreamState) processChatSSEBuffer(buf []byte) {
 	lines := bytes.Split(buf, []byte("\n"))
 	for _, line := range lines {
 		line = bytes.TrimSpace(line)
@@ -878,21 +889,21 @@ func processChatSSEBuffer(buf []byte, lastUsage *map[string]any, finishReason *s
 
 			// Capture usage if present
 			if usage, ok := chatEvent["usage"].(map[string]any); ok {
-				*lastUsage = usage
+				s.lastUsage = usage
 			}
 
 			// Capture finish_reason if present
 			if choices, ok := chatEvent["choices"].([]any); ok && len(choices) > 0 {
 				if choice, ok := choices[0].(map[string]any); ok {
 					if fr, ok := choice["finish_reason"].(string); ok && fr != "" {
-						*finishReason = fr
+						s.finishReason = fr
 					}
 					if delta, ok := choice["delta"].(map[string]any); ok {
 						if content, ok := delta["content"].(string); ok && content != "" {
-							currentText.WriteString(content)
+							s.currentText.WriteString(content)
 						}
 						if reasoning, ok := delta["reasoning_content"].(string); ok && reasoning != "" {
-							reasoningText.WriteString(reasoning)
+							s.reasoningText.WriteString(reasoning)
 						}
 					}
 				}
@@ -902,40 +913,43 @@ func processChatSSEBuffer(buf []byte, lastUsage *map[string]any, finishReason *s
 }
 
 // sendCompletionEvents sends the completion events before response.completed
-func sendCompletionEvents(w http.ResponseWriter, seqNum *int, hasReasoning bool, reasoningItemID, itemID string, outputIndex int, messageStarted bool, text, reasoning string, toolCalls map[int]*toolCallState, logger *slog.Logger) {
+func (s *responsesStreamState) sendCompletionEvents(w http.ResponseWriter) {
+	text := s.currentText.String()
+	reasoning := s.reasoningText.String()
+
 	// Send reasoning completion events if we had reasoning
-	if hasReasoning && reasoningItemID != "" {
+	if s.hasReasoning && s.reasoningItemID != "" {
 		// response.reasoning_text.done
 		sendSSEEvent(w, map[string]any{
 			"type":            "response.reasoning_text.done",
-			"item_id":         reasoningItemID,
+			"item_id":         s.reasoningItemID,
 			"output_index":    0,
 			"content_index":   0,
 			"text":            reasoning,
-			"sequence_number": *seqNum,
-		}, logger)
-		*seqNum++
+			"sequence_number": s.seqNum,
+		}, s.logger)
+		s.seqNum++
 
 		// response.reasoning_part.done
 		sendSSEEvent(w, map[string]any{
 			"type":          "response.reasoning_part.done",
-			"item_id":       reasoningItemID,
+			"item_id":       s.reasoningItemID,
 			"output_index":  0,
 			"content_index": 0,
 			"part": map[string]any{
 				"type": "reasoning_text",
 				"text": reasoning,
 			},
-			"sequence_number": *seqNum,
-		}, logger)
-		*seqNum++
+			"sequence_number": s.seqNum,
+		}, s.logger)
+		s.seqNum++
 
 		// response.output_item.done for reasoning
 		sendSSEEvent(w, map[string]any{
 			"type":         "response.output_item.done",
 			"output_index": 0,
 			"item": map[string]any{
-				"id":      reasoningItemID,
+				"id":      s.reasoningItemID,
 				"type":    "reasoning",
 				"summary": []any{},
 				"content": []any{
@@ -947,33 +961,33 @@ func sendCompletionEvents(w http.ResponseWriter, seqNum *int, hasReasoning bool,
 				"encrypted_content": nil,
 				"status":            "completed",
 			},
-			"sequence_number": *seqNum,
-		}, logger)
-		*seqNum++
+			"sequence_number": s.seqNum,
+		}, s.logger)
+		s.seqNum++
 	}
 
 	// Send message completion events if we started a message
-	if messageStarted {
+	if s.messageStarted {
 		msgOutputIndex := 0
-		if hasReasoning {
+		if s.hasReasoning {
 			msgOutputIndex = 1
 		}
 
 		// response.output_text.done
 		sendSSEEvent(w, map[string]any{
 			"type":            "response.output_text.done",
-			"item_id":         itemID,
+			"item_id":         s.itemID,
 			"output_index":    msgOutputIndex,
 			"content_index":   0,
 			"text":            text,
-			"sequence_number": *seqNum,
-		}, logger)
-		*seqNum++
+			"sequence_number": s.seqNum,
+		}, s.logger)
+		s.seqNum++
 
 		// response.content_part.done
 		sendSSEEvent(w, map[string]any{
 			"type":          "response.content_part.done",
-			"item_id":       itemID,
+			"item_id":       s.itemID,
 			"output_index":  msgOutputIndex,
 			"content_index": 0,
 			"part": map[string]any{
@@ -982,16 +996,16 @@ func sendCompletionEvents(w http.ResponseWriter, seqNum *int, hasReasoning bool,
 				"annotations": []any{},
 				"logprobs":    nil,
 			},
-			"sequence_number": *seqNum,
-		}, logger)
-		*seqNum++
+			"sequence_number": s.seqNum,
+		}, s.logger)
+		s.seqNum++
 
 		// response.output_item.done for message
 		sendSSEEvent(w, map[string]any{
 			"type":         "response.output_item.done",
 			"output_index": msgOutputIndex,
 			"item": map[string]any{
-				"id":   itemID,
+				"id":   s.itemID,
 				"type": "message",
 				"role": "assistant",
 				"content": []any{
@@ -1005,13 +1019,13 @@ func sendCompletionEvents(w http.ResponseWriter, seqNum *int, hasReasoning bool,
 				"status": "completed",
 				"phase":  nil,
 			},
-			"sequence_number": *seqNum,
-		}, logger)
-		*seqNum++
+			"sequence_number": s.seqNum,
+		}, s.logger)
+		s.seqNum++
 	}
 
 	// Send tool call completion events
-	for _, tc := range toolCalls {
+	for _, tc := range s.toolCalls {
 		if tc.Started {
 			args := tc.Arguments.String()
 
@@ -1021,9 +1035,9 @@ func sendCompletionEvents(w http.ResponseWriter, seqNum *int, hasReasoning bool,
 				"item_id":         tc.ItemID,
 				"output_index":    tc.Index,
 				"arguments":       args,
-				"sequence_number": *seqNum,
-			}, logger)
-			*seqNum++
+				"sequence_number": s.seqNum,
+			}, s.logger)
+			s.seqNum++
 
 			// response.output_item.done for function_call
 			sendSSEEvent(w, map[string]any{
@@ -1037,15 +1051,15 @@ func sendCompletionEvents(w http.ResponseWriter, seqNum *int, hasReasoning bool,
 					"arguments": args,
 					"status":    "completed",
 				},
-				"sequence_number": *seqNum,
-			}, logger)
-			*seqNum++
+				"sequence_number": s.seqNum,
+			}, s.logger)
+			s.seqNum++
 		}
 	}
 }
 
 // convertChatSSEEventToResponses converts a single Chat SSE event to Responses events
-func convertChatSSEEventToResponses(chatEvent map[string]any, responseID, itemID string, outputIndex, contentIndex *int, hasReasoning *bool, reasoningItemID *string, reasoningContentIndex *int, seqNum *int, virtualModel string, currentText, reasoningText *strings.Builder, messageStarted *bool, toolCalls map[int]*toolCallState, logger *slog.Logger) []map[string]any {
+func (s *responsesStreamState) convertChatSSEEventToResponses(chatEvent map[string]any) []map[string]any {
 	var events []map[string]any
 
 	choices, ok := chatEvent["choices"].([]any)
@@ -1065,17 +1079,17 @@ func convertChatSSEEventToResponses(chatEvent map[string]any, responseID, itemID
 
 	// Handle reasoning content (thinking mode)
 	if reasoning, ok := delta["reasoning_content"].(string); ok && reasoning != "" {
-		if !*hasReasoning {
-			*hasReasoning = true
-			*reasoningItemID = fmt.Sprintf("rs_%s", generateSimpleID())
+		if !s.hasReasoning {
+			s.hasReasoning = true
+			s.reasoningItemID = fmt.Sprintf("rs_%s", generateSimpleID())
 
 			// Add reasoning item with content array (matching example format)
 			events = append(events, map[string]any{
 				"type":            "response.output_item.added",
-				"output_index":    *outputIndex,
-				"sequence_number": *seqNum,
+				"output_index":    s.outputIndex,
+				"sequence_number": s.seqNum,
 				"item": map[string]any{
-					"id":                *reasoningItemID,
+					"id":                s.reasoningItemID,
 					"summary":           []any{},
 					"type":              "reasoning",
 					"content":           []any{},
@@ -1083,51 +1097,51 @@ func convertChatSSEEventToResponses(chatEvent map[string]any, responseID, itemID
 					"status":            nil,
 				},
 			})
-			*seqNum++
-			*outputIndex++
+			s.seqNum++
+			s.outputIndex++
 
 			// Add reasoning content part
 			events = append(events, map[string]any{
 				"type":          "response.reasoning_part.added",
-				"item_id":       *reasoningItemID,
-				"output_index":  *outputIndex - 1,
+				"item_id":       s.reasoningItemID,
+				"output_index":  s.outputIndex - 1,
 				"content_index": 0,
 				"part": map[string]any{
 					"type": "reasoning_text",
 					"text": "",
 				},
-				"sequence_number": *seqNum,
+				"sequence_number": s.seqNum,
 			})
-			*seqNum++
-			*reasoningContentIndex = 0
+			s.seqNum++
+			s.reasoningContentIndex = 0
 		}
 
 		// Accumulate reasoning text
-		reasoningText.WriteString(reasoning)
+		s.reasoningText.WriteString(reasoning)
 
 		// Send reasoning delta
 		events = append(events, map[string]any{
 			"type":            "response.reasoning_text.delta",
-			"item_id":         *reasoningItemID,
-			"output_index":    *outputIndex - 1,
+			"item_id":         s.reasoningItemID,
+			"output_index":    s.outputIndex - 1,
 			"content_index":   0,
 			"delta":           reasoning,
-			"sequence_number": *seqNum,
+			"sequence_number": s.seqNum,
 		})
-		*seqNum++
+		s.seqNum++
 	}
 
 	// Handle content (text)
 	if content, ok := delta["content"].(string); ok && content != "" {
-		if *contentIndex == 0 {
+		if s.contentIndex == 0 {
 			// First content part - add message item
-			*messageStarted = true
+			s.messageStarted = true
 			events = append(events, map[string]any{
 				"type":            "response.output_item.added",
-				"output_index":    *outputIndex,
-				"sequence_number": *seqNum,
+				"output_index":    s.outputIndex,
+				"sequence_number": s.seqNum,
 				"item": map[string]any{
-					"id":      itemID,
+					"id":      s.itemID,
 					"type":    "message",
 					"role":    "assistant",
 					"status":  "in_progress",
@@ -1135,36 +1149,36 @@ func convertChatSSEEventToResponses(chatEvent map[string]any, responseID, itemID
 					"phase":   nil,
 				},
 			})
-			*seqNum++
+			s.seqNum++
 
 			// Add content part
 			events = append(events, map[string]any{
 				"type":          "response.content_part.added",
-				"item_id":       itemID,
-				"output_index":  *outputIndex,
-				"content_index": *contentIndex,
+				"item_id":       s.itemID,
+				"output_index":  s.outputIndex,
+				"content_index": s.contentIndex,
 				"part": map[string]any{
 					"type": "output_text",
 				},
-				"sequence_number": *seqNum,
+				"sequence_number": s.seqNum,
 			})
-			*seqNum++
-			*contentIndex++
+			s.seqNum++
+			s.contentIndex++
 		}
 
-		// Accumulate text (only once!)
-		currentText.WriteString(content)
+		// Accumulate text
+		s.currentText.WriteString(content)
 
 		// Send text delta
 		events = append(events, map[string]any{
 			"type":            "response.output_text.delta",
-			"item_id":         itemID,
-			"output_index":    *outputIndex,
+			"item_id":         s.itemID,
+			"output_index":    s.outputIndex,
 			"content_index":   0,
 			"delta":           content,
-			"sequence_number": *seqNum,
+			"sequence_number": s.seqNum,
 		})
-		*seqNum++
+		s.seqNum++
 	}
 
 	// Handle tool calls
@@ -1182,12 +1196,12 @@ func convertChatSSEEventToResponses(chatEvent map[string]any, responseID, itemID
 			}
 
 			// Get or create tool call state
-			tcState, exists := toolCalls[tcIndex]
+			tcState, exists := s.toolCalls[tcIndex]
 			if !exists {
 				tcState = &toolCallState{
-					Index: *outputIndex,
+					Index: s.outputIndex,
 				}
-				toolCalls[tcIndex] = tcState
+				s.toolCalls[tcIndex] = tcState
 			}
 
 			// Extract tool call ID (only present in first chunk)
@@ -1210,13 +1224,13 @@ func convertChatSSEEventToResponses(chatEvent map[string]any, responseID, itemID
 					if !tcState.Started {
 						tcState.Started = true
 						tcState.ItemID = fmt.Sprintf("fc_%s", generateSimpleID())
-						tcState.Index = *outputIndex
-						*outputIndex++
+						tcState.Index = s.outputIndex
+						s.outputIndex++
 
 						events = append(events, map[string]any{
 							"type":            "response.output_item.added",
 							"output_index":    tcState.Index,
-							"sequence_number": *seqNum,
+							"sequence_number": s.seqNum,
 							"item": map[string]any{
 								"id":        tcState.ItemID,
 								"type":      "function_call",
@@ -1226,7 +1240,7 @@ func convertChatSSEEventToResponses(chatEvent map[string]any, responseID, itemID
 								"status":    "in_progress",
 							},
 						})
-						*seqNum++
+						s.seqNum++
 					}
 
 					// Emit arguments delta
@@ -1235,9 +1249,9 @@ func convertChatSSEEventToResponses(chatEvent map[string]any, responseID, itemID
 						"item_id":         tcState.ItemID,
 						"output_index":    tcState.Index,
 						"delta":           args,
-						"sequence_number": *seqNum,
+						"sequence_number": s.seqNum,
 					})
-					*seqNum++
+					s.seqNum++
 				}
 			}
 		}
