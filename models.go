@@ -19,6 +19,7 @@ func models(httpCli *http.Client, target *url.URL, servedModel, thinkingGeneral,
 
 		// Create request to backend (clone to copy all headers from incoming request)
 		req := r.Clone(ctx)
+		stripHopByHopHeaders(req)
 		var err error
 		req.URL, err = url.Parse(target.String() + "/v1/models")
 		if err != nil {

@@ -59,6 +59,25 @@ func rewriteRequestURL(req *http.Request, target *url.URL) {
 	}
 }
 
+// hopByHopHeaders lists headers that must not be forwarded by proxies (RFC 7230 §6.1)
+var hopByHopHeaders = []string{
+	"Connection",
+	"Keep-Alive",
+	"Proxy-Authenticate",
+	"Proxy-Authorization",
+	"Te",
+	"Trailer",
+	"Transfer-Encoding",
+	"Upgrade",
+}
+
+// stripHopByHopHeaders removes hop-by-hop headers from the request before proxying
+func stripHopByHopHeaders(req *http.Request) {
+	for _, h := range hopByHopHeaders {
+		req.Header.Del(h)
+	}
+}
+
 // applySamplingParams applies sampling parameters to request data
 // If enforce is true, parameters are always set, overriding any client-provided values
 func applySamplingParams(data map[string]any, samplingParams map[string]any, logger *slog.Logger, enforce bool) {

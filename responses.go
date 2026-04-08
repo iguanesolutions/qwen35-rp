@@ -139,6 +139,7 @@ func responses(httpCli *http.Client, target *url.URL,
 		// Prepare outgoing request to /v1/chat/completions
 		outreq := r.Clone(ctx)
 		rewriteRequestURL(outreq, target)
+		stripHopByHopHeaders(outreq)
 		outreq.URL.Path = "/v1/chat/completions"
 		outreq.Body = io.NopCloser(bytes.NewReader(requestBody))
 		outreq.ContentLength = int64(len(requestBody))

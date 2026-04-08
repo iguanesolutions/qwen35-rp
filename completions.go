@@ -151,6 +151,7 @@ func transform(httpCli *http.Client, target *url.URL,
 		// prepare outgoing request
 		outreq := r.Clone(ctx)
 		rewriteRequestURL(outreq, target)
+		stripHopByHopHeaders(outreq)
 		outreq.Body = io.NopCloser(bytes.NewReader(requestBody))
 		outreq.ContentLength = int64(len(requestBody))
 		outreq.RequestURI = ""
