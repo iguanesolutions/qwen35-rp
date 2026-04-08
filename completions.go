@@ -382,14 +382,6 @@ func streamResponse(w http.ResponseWriter, backendBody io.ReadCloser, virtualMod
 				return werr
 			}
 		}
-
-		// Prevent buffer from growing too large
-		if len(buf) > 8192 {
-			if _, werr := w.Write(buf); werr != nil {
-				return werr
-			}
-			buf = buf[:0]
-		}
 	}
 }
 
