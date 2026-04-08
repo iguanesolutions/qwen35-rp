@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -1404,9 +1405,13 @@ func sendSSEEvent(w http.ResponseWriter, event map[string]any, logger *slog.Logg
 	}
 }
 
-// generateSimpleID generates a simple random ID
+// idCounter is an atomic counter to ensure unique IDs even when called in tight succession
+var idCounter atomic.Uint64
+
+// generateSimpleID generates a unique ID using timestamp + atomic counter
 func generateSimpleID() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano()%1000000000000)
+	count := idCounter.Add(1)
+	return fmt.Sprintf("%d_%d", time.Now().UnixNano()%1000000000000, count)
 }
 
 // mustMarshal marshals JSON or panics
