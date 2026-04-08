@@ -797,6 +797,7 @@ type responsesStreamState struct {
 	contentIndex          int
 	hasReasoning          bool
 	reasoningItemID       string
+	reasoningOutputIndex  int
 	reasoningContentIndex int
 	currentText           strings.Builder
 	reasoningText         strings.Builder
@@ -979,7 +980,7 @@ func (s *responsesStreamState) sendCompletionEvents(w http.ResponseWriter) {
 		sendSSEEvent(w, map[string]any{
 			"type":            "response.reasoning_text.done",
 			"item_id":         s.reasoningItemID,
-			"output_index":    0,
+			"output_index":    s.reasoningOutputIndex,
 			"content_index":   0,
 			"text":            reasoning,
 			"sequence_number": s.seqNum,
@@ -990,7 +991,7 @@ func (s *responsesStreamState) sendCompletionEvents(w http.ResponseWriter) {
 		sendSSEEvent(w, map[string]any{
 			"type":          "response.reasoning_part.done",
 			"item_id":       s.reasoningItemID,
-			"output_index":  0,
+			"output_index":  s.reasoningOutputIndex,
 			"content_index": 0,
 			"part": map[string]any{
 				"type": "reasoning_text",
@@ -1003,7 +1004,7 @@ func (s *responsesStreamState) sendCompletionEvents(w http.ResponseWriter) {
 		// response.output_item.done for reasoning
 		sendSSEEvent(w, map[string]any{
 			"type":         "response.output_item.done",
-			"output_index": 0,
+			"output_index": s.reasoningOutputIndex,
 			"item": map[string]any{
 				"id":      s.reasoningItemID,
 				"type":    "reasoning",
@@ -1139,6 +1140,7 @@ func (s *responsesStreamState) convertChatSSEEventToResponses(chatEvent map[stri
 		if !s.hasReasoning {
 			s.hasReasoning = true
 			s.reasoningItemID = fmt.Sprintf("rs_%s", generateSimpleID())
+			s.reasoningOutputIndex = s.outputIndex
 
 			// Add reasoning item with content array (matching example format)
 			events = append(events, map[string]any{
