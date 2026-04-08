@@ -672,9 +672,7 @@ func convertChatToResponses(chatData map[string]any, virtualModel string, logger
 		"output_messages":      nil,
 	}
 
-	if totalText.Len() > 0 {
-		respData["output_text"] = totalText.String()
-	}
+	respData["output_text"] = totalText.String()
 
 	return respData, nil
 }
