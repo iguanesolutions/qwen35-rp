@@ -11,13 +11,13 @@ import (
 	"github.com/hekmon/httplog/v3"
 )
 
-// tokenize handles the /tokenize endpoint by intercepting requests and converting
-// Responses API format messages to Chat Completions format if needed before forwarding to vLLM.
+// tokenize handles the /tokenize endpoint.
 //
-// Accepted input formats:
-//   - Chat Completions: {"messages": [...], "tools": [...]}
-//   - Responses API:    {"input": "..." or [...], "instructions": "...", "tools": [...]}
-//   - vLLM prompt:      {"prompt": "..."}
+// Two modes:
+//   - {"prompt": "..."} — raw text tokenization, forwarded as-is (no chat template)
+//   - {"messages": [...]} — messages tokenization with chat template applied;
+//     individual messages can use Chat Completions or Responses API content part formats
+//     (e.g. input_text), which are normalized to Chat Completions format before forwarding
 func tokenize(httpCli *http.Client, target *url.URL, servedModel string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logger := logger.With(httplog.GetReqIDSLogAttr(r.Context()))
@@ -45,7 +45,6 @@ func tokenize(httpCli *http.Client, target *url.URL, servedModel string) http.Ha
 		var (
 			messages []map[string]any
 			tools    []map[string]any
-			modified bool
 		)
 
 		switch {
@@ -65,17 +64,8 @@ func tokenize(httpCli *http.Client, target *url.URL, servedModel string) http.Ha
 				tools = passThroughTools(rawTools)
 			}
 
-		case reqData["input"] != nil:
-			// Responses API format: convert input → messages, tools → chat tools
-			logger.Info("detected Responses API format in tokenize request")
-			messages = convertInputToMessages(reqData["input"], reqData["instructions"], logger)
-			if rawTools, ok := reqData["tools"].([]any); ok && len(rawTools) > 0 {
-				tools = convertToolsToChat(rawTools)
-			}
-			modified = true
-
 		case reqData["prompt"] != nil:
-			// vLLM native prompt format: wrap in a single user message
+			// Raw prompt tokenization: forward as-is without chat template
 			promptStr, ok := reqData["prompt"].(string)
 			if !ok || promptStr == "" {
 				logger.Error("prompt field is not a valid string")
@@ -83,13 +73,49 @@ func tokenize(httpCli *http.Client, target *url.URL, servedModel string) http.Ha
 				return
 			}
 			logger.Info("detected prompt tokenization request")
-			messages = []map[string]any{
-				{"role": "user", "content": promptStr},
+			forwardReq := map[string]any{
+				"model":  servedModel,
+				"prompt": promptStr,
 			}
-			modified = true
+			if v, ok := reqData["return_token_strs"]; ok {
+				forwardReq["return_token_strs"] = v
+			}
+			requestBody, err = json.Marshal(forwardReq)
+			if err != nil {
+				logger.Error("failed to marshal request body", slog.Any("error", err))
+				httpError(ctx, w, http.StatusInternalServerError)
+				return
+			}
+			logger.Debug("forwarding prompt tokenize request to backend", slog.String("body", string(requestBody)))
+			// Prepare outgoing request
+			outreq := r.Clone(ctx)
+			rewriteRequestURL(outreq, target)
+			stripHopByHopHeaders(outreq)
+			outreq.Body = io.NopCloser(bytes.NewReader(requestBody))
+			outreq.ContentLength = int64(len(requestBody))
+			outreq.RequestURI = ""
+			// Send request to backend
+			outResp, err := httpCli.Do(outreq)
+			if err != nil {
+				logger.Error("failed to send upstream request", slog.Any("error", err))
+				httpError(ctx, w, http.StatusBadGateway)
+				return
+			}
+			defer outResp.Body.Close()
+			// Copy response headers and body
+			for header, values := range outResp.Header {
+				for _, value := range values {
+					w.Header().Add(header, value)
+				}
+			}
+			w.WriteHeader(outResp.StatusCode)
+			if _, err = io.Copy(w, outResp.Body); err != nil {
+				logger.Error("failed to write response", slog.String("error", err.Error()))
+			}
+			return
 
 		default:
-			logger.Error("request must contain 'messages', 'input', or 'prompt' field")
+			logger.Error("request must contain 'messages' or 'prompt' field")
 			httpError(ctx, w, http.StatusBadRequest)
 			return
 		}
@@ -128,10 +154,6 @@ func tokenize(httpCli *http.Client, target *url.URL, servedModel string) http.Ha
 		}
 
 		logger.Debug("forwarding tokenize request to backend", slog.String("body", string(requestBody)))
-
-		if modified {
-			modifiedRequests.Add(1)
-		}
 
 		// Prepare outgoing request
 		outreq := r.Clone(ctx)
