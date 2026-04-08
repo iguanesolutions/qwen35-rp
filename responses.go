@@ -276,9 +276,6 @@ func convertResponsesToChat(reqData map[string]any, logger *slog.Logger) (map[st
 	if seed, ok := reqData["seed"]; ok {
 		chatData["seed"] = seed
 	}
-	if n, ok := reqData["n"]; ok {
-		chatData["n"] = n
-	}
 	if logprobs, ok := reqData["logprobs"]; ok {
 		chatData["logprobs"] = logprobs
 	}
