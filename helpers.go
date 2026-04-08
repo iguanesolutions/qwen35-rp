@@ -62,7 +62,7 @@ func stripHopByHopHeaders(req *http.Request) {
 // If enforce is true, parameters are always set, overriding any client-provided values
 func applySamplingParams(data map[string]any, samplingParams map[string]any, logger *slog.Logger, enforce bool) {
 	for k, v := range samplingParams {
-		if _, ok := data[k]; ok {
+		if existing, ok := data[k]; ok && existing != nil {
 			if enforce {
 				logger.Debug("enforcing sampling parameter",
 					slog.Any("key", k),
