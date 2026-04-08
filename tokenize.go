@@ -91,8 +91,16 @@ func tokenize(httpCli *http.Client, target *url.URL,
 					)
 				}
 				if knownModel {
-					kwargs, hasKwargs := reqData["chat_template_kwargs"].(map[string]any)
-					if !hasKwargs {
+					var kwargs map[string]any
+					if existing, exists := reqData["chat_template_kwargs"]; exists {
+						var ok bool
+						kwargs, ok = existing.(map[string]any)
+						if !ok {
+							logger.Error("chat_template_kwargs is not a map[string]any")
+							httpError(ctx, w, http.StatusBadRequest)
+							return
+						}
+					} else {
 						kwargs = make(map[string]any)
 					}
 					kwargs["enable_thinking"] = think
