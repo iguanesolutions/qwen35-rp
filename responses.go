@@ -1321,7 +1321,12 @@ func (s *responsesStreamState) convertChatSSEEventToResponses(chatEvent map[stri
 	}
 
 	// Handle reasoning content (thinking mode)
-	if reasoning, ok := delta["reasoning_content"].(string); ok && reasoning != "" {
+	// vLLM may use either "reasoning_content" or "reasoning" field name
+	reasoning, hasReasoningDelta := delta["reasoning_content"].(string)
+	if !hasReasoningDelta || reasoning == "" {
+		reasoning, hasReasoningDelta = delta["reasoning"].(string)
+	}
+	if hasReasoningDelta && reasoning != "" {
 		if !s.hasReasoning {
 			s.hasReasoning = true
 			s.reasoningItemID = fmt.Sprintf("rs_%s", generateSimpleID())
