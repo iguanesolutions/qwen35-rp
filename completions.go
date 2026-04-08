@@ -72,7 +72,7 @@ func transform(httpCli *http.Client, target *url.URL,
 		err = json.Unmarshal(requestBody, &data)
 		if err != nil {
 			logger.Error("failed to parse body as JSON", slog.String("error", err.Error()))
-			httpError(ctx, w, http.StatusInternalServerError)
+			httpError(ctx, w, http.StatusBadRequest)
 			return
 		}
 		modelName, ok := data["model"].(string)
