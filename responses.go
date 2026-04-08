@@ -620,7 +620,12 @@ func convertChatToResponses(chatData map[string]any, virtualModel string, logger
 		}
 
 		// Check for reasoning_content (thinking mode) - must come BEFORE message item
-		if reasoning, ok := message["reasoning_content"].(string); ok && reasoning != "" {
+		// vLLM may use either "reasoning_content" or "reasoning" field
+		reasoning, hasReasoning := message["reasoning_content"].(string)
+		if !hasReasoning || reasoning == "" {
+			reasoning, hasReasoning = message["reasoning"].(string)
+		}
+		if hasReasoning && reasoning != "" {
 			reasoningItem := map[string]any{
 				"id":      fmt.Sprintf("rs_%s", generateSimpleID()),
 				"summary": []any{},
