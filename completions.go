@@ -489,6 +489,11 @@ func streamResponse(w http.ResponseWriter, backendBody io.ReadCloser, virtualMod
 			}
 		}
 
+		// Compact buffer to release consumed prefix memory
+		if cap(buf) > 4096 && len(buf) < cap(buf)/2 {
+			buf = append(make([]byte, 0, len(buf)), buf...)
+		}
+
 		if err == io.EOF {
 			// Attempt to fix model name in any remaining data before writing
 			if len(buf) > 0 {

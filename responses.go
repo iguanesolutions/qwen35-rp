@@ -578,16 +578,16 @@ func convertContentPartsToChatFormat(parts []any, logger *slog.Logger) []map[str
 				}
 			}
 
-			chatPart := map[string]any{
-				"type": "image_url",
-				"image_url": map[string]any{
-					"url": imageURL,
-				},
+			imageURLMap := map[string]any{
+				"url": imageURL,
 			}
 			if detail != "" {
-				chatPart["image_url"].(map[string]any)["detail"] = detail
+				imageURLMap["detail"] = detail
 			}
-			chatParts = append(chatParts, chatPart)
+			chatParts = append(chatParts, map[string]any{
+				"type":      "image_url",
+				"image_url": imageURLMap,
+			})
 
 		// Responses API output format (from previous assistant turn)
 		case "output_text":
@@ -624,16 +624,16 @@ func convertContentPartsToChatFormat(parts []any, logger *slog.Logger) []map[str
 				imageURL = url
 			}
 
-			chatPart := map[string]any{
-				"type": "image_url",
-				"image_url": map[string]any{
-					"url": imageURL,
-				},
+			imageURLMap := map[string]any{
+				"url": imageURL,
 			}
 			if detail != "" {
-				chatPart["image_url"].(map[string]any)["detail"] = detail
+				imageURLMap["detail"] = detail
 			}
-			chatParts = append(chatParts, chatPart)
+			chatParts = append(chatParts, map[string]any{
+				"type":      "image_url",
+				"image_url": imageURLMap,
+			})
 
 		default:
 			// Pass through unknown types as-is, but ensure structure is correct for vLLM
@@ -1055,6 +1055,11 @@ func streamResponsesConverter(w http.ResponseWriter, backendBody io.ReadCloser, 
 					flusher.Flush()
 				}
 			}
+		}
+
+		// Compact buffer to release consumed prefix memory
+		if cap(buf) > 4096 && len(buf) < cap(buf)/2 {
+			buf = append(make([]byte, 0, len(buf)), buf...)
 		}
 
 		if err == io.EOF {
