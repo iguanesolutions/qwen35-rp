@@ -350,9 +350,7 @@ func streamResponse(w http.ResponseWriter, backendBody io.ReadCloser, virtualMod
 			buf = buf[idx+2:]
 
 			// Fix model name in ALL data events (backend includes model in every chunk)
-			if bytes.HasPrefix(event, []byte("data: ")) {
-				event = fixModelNameInSSE(event, virtualModel, logger)
-			}
+			event = fixModelNameInSSE(event, virtualModel, logger)
 
 			if _, werr := w.Write(event); werr != nil {
 				return werr
