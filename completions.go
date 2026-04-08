@@ -240,56 +240,8 @@ func fixNonStreamingResponse(responseBody []byte, think bool, virtualModel strin
 
 	// Fix vLLM bug: non-thinking responses incorrectly placed in reasoning_content/reasoning
 	if !think {
-		choices, ok := data["choices"].([]any)
-		if ok {
-			for i, choice := range choices {
-				choiceMap, ok := choice.(map[string]any)
-				if !ok {
-					continue
-				}
-
-				message, ok := choiceMap["message"].(map[string]any)
-				if !ok {
-					continue
-				}
-
-				// Check if content is empty/missing and reasoning_content or reasoning exists
-				var content string
-				var hasContent bool
-				if contentVal, exists := message["content"]; exists {
-					if contentStr, ok := contentVal.(string); ok {
-						content = contentStr
-						hasContent = true
-					}
-				}
-				reasoningContent, hasReasoningContent := message["reasoning_content"].(string)
-				reasoning, hasReasoning := message["reasoning"].(string)
-
-				if (!hasContent || content == "") && (hasReasoningContent || hasReasoning) {
-					var reasoningText string
-					var reasoningSource string
-					if hasReasoningContent && reasoningContent != "" {
-						reasoningText = reasoningContent
-						reasoningSource = "reasoning_content"
-					} else if hasReasoning && reasoning != "" {
-						reasoningText = reasoning
-						reasoningSource = "reasoning"
-					}
-
-					if reasoningText != "" {
-						message["content"] = reasoningText
-						delete(message, "reasoning_content")
-						delete(message, "reasoning")
-						choiceMap["message"] = message
-						choices[i] = choiceMap
-						modified = true
-						logger.Info("vLLM response fixed: moved reasoning content to content field",
-							slog.String("source_field", reasoningSource),
-							slog.Int("choice_index", i),
-						)
-					}
-				}
-			}
+		if fixReasoningContentBug(data, logger) {
+			modified = true
 		}
 	}
 
@@ -303,6 +255,67 @@ func fixNonStreamingResponse(responseBody []byte, think bool, virtualModel strin
 		return responseBody
 	}
 	return fixedBody
+}
+
+// fixReasoningContentBug fixes a vLLM bug where non-thinking responses have content
+// incorrectly placed in reasoning_content/reasoning instead of content.
+// Operates in-place on a parsed Chat Completions response map. Returns true if any fix was applied.
+func fixReasoningContentBug(data map[string]any, logger *slog.Logger) bool {
+	choices, ok := data["choices"].([]any)
+	if !ok {
+		return false
+	}
+
+	fixed := false
+	for i, choice := range choices {
+		choiceMap, ok := choice.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		message, ok := choiceMap["message"].(map[string]any)
+		if !ok {
+			continue
+		}
+
+		// Check if content is empty/missing and reasoning_content or reasoning exists
+		var content string
+		var hasContent bool
+		if contentVal, exists := message["content"]; exists {
+			if contentStr, ok := contentVal.(string); ok {
+				content = contentStr
+				hasContent = true
+			}
+		}
+		reasoningContent, hasReasoningContent := message["reasoning_content"].(string)
+		reasoning, hasReasoning := message["reasoning"].(string)
+
+		if (!hasContent || content == "") && (hasReasoningContent || hasReasoning) {
+			var reasoningText string
+			var reasoningSource string
+			if hasReasoningContent && reasoningContent != "" {
+				reasoningText = reasoningContent
+				reasoningSource = "reasoning_content"
+			} else if hasReasoning && reasoning != "" {
+				reasoningText = reasoning
+				reasoningSource = "reasoning"
+			}
+
+			if reasoningText != "" {
+				message["content"] = reasoningText
+				delete(message, "reasoning_content")
+				delete(message, "reasoning")
+				choiceMap["message"] = message
+				choices[i] = choiceMap
+				fixed = true
+				logger.Info("vLLM response fixed: moved reasoning content to content field",
+					slog.String("source_field", reasoningSource),
+					slog.Int("choice_index", i),
+				)
+			}
+		}
+	}
+	return fixed
 }
 
 // streamResponse streams SSE events from backend to client, fixing model name in all events.
