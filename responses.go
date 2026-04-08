@@ -297,7 +297,24 @@ func convertInputToMessages(input any, instructions any, logger *slog.Logger) []
 		})
 
 	case []any:
-		// Array of input items
+		// Array of input items.
+		// We need to group consecutive function_call items into a single assistant message
+		// with a tool_calls array, as Chat Completions format requires.
+		var pendingToolCalls []map[string]any
+
+		// flushToolCalls appends a single assistant message containing all pending tool calls
+		flushToolCalls := func() {
+			if len(pendingToolCalls) == 0 {
+				return
+			}
+			messages = append(messages, map[string]any{
+				"role":       "assistant",
+				"content":    nil,
+				"tool_calls": pendingToolCalls,
+			})
+			pendingToolCalls = nil
+		}
+
 		for _, item := range v {
 			itemMap, ok := item.(map[string]any)
 			if !ok {
@@ -308,6 +325,7 @@ func convertInputToMessages(input any, instructions any, logger *slog.Logger) []
 
 			switch itemType {
 			case "message", "":
+				flushToolCalls()
 				// Regular message
 				role, _ := itemMap["role"].(string)
 				if role == "" {
@@ -325,7 +343,23 @@ func convertInputToMessages(input any, instructions any, logger *slog.Logger) []
 					"content": content,
 				})
 
+			case "function_call":
+				// Assistant tool call — accumulate into pending group
+				callID, _ := itemMap["call_id"].(string)
+				name, _ := itemMap["name"].(string)
+				args, _ := itemMap["arguments"].(string)
+
+				pendingToolCalls = append(pendingToolCalls, map[string]any{
+					"id":   callID,
+					"type": "function",
+					"function": map[string]any{
+						"name":      name,
+						"arguments": args,
+					},
+				})
+
 			case "function_call_output":
+				flushToolCalls()
 				// Tool call result
 				callID, _ := itemMap["call_id"].(string)
 				output, _ := itemMap["output"].(string)
@@ -337,6 +371,7 @@ func convertInputToMessages(input any, instructions any, logger *slog.Logger) []
 				})
 			}
 		}
+		flushToolCalls()
 	}
 
 	return messages
