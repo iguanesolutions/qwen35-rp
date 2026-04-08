@@ -66,6 +66,11 @@ func rewriteRequestURL(req *http.Request, target *url.URL) {
 // with base64-encoded images can legitimately be very large.
 const maxRequestBodySize = 100 << 20 // 100 MB
 
+// maxSSEEventSize is the maximum allowed size for a single buffered SSE event (10 MB).
+// This prevents unbounded memory growth if the backend sends a malformed stream
+// without proper event delimiters.
+const maxSSEEventSize = 10 << 20 // 10 MB
+
 // hopByHopHeaders lists headers that must not be forwarded by proxies (RFC 7230 §6.1)
 var hopByHopHeaders = []string{
 	"Connection",

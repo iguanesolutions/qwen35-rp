@@ -848,6 +848,11 @@ func streamResponsesConverter(w http.ResponseWriter, backendBody io.ReadCloser, 
 			return err
 		}
 
+		// Guard against unbounded buffer growth from malformed streams
+		if len(buf) > maxSSEEventSize {
+			return fmt.Errorf("SSE buffer exceeded maximum size (%d bytes)", maxSSEEventSize)
+		}
+
 		// Process complete SSE events (including any received in the final EOF read)
 		for {
 			idx := bytes.Index(buf, []byte("\n\n"))

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -318,6 +319,11 @@ func streamResponse(w http.ResponseWriter, backendBody io.ReadCloser, virtualMod
 		}
 		if err != nil && err != io.EOF {
 			return err
+		}
+
+		// Guard against unbounded buffer growth from malformed streams
+		if len(buf) > maxSSEEventSize {
+			return fmt.Errorf("SSE buffer exceeded maximum size (%d bytes)", maxSSEEventSize)
 		}
 
 		// Process complete SSE events (separated by double newline)
