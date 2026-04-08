@@ -1001,7 +1001,7 @@ func streamResponsesConverter(w http.ResponseWriter, backendBody io.ReadCloser, 
 			}
 
 			// Send final completed event
-			finalResp := buildFinalResponse(s.responseID, s.itemID, s.reasoningItemID, s.virtualModel, now, s.currentText.String(), s.reasoningText.String(), s.lastUsage, s.finishReason, s.toolCalls)
+			finalResp := buildFinalResponse(s.responseID, s.itemID, s.reasoningItemID, s.virtualModel, now, s.currentText.String(), s.reasoningText.String(), s.lastUsage, s.finishReason, s.toolCalls, s.messageStarted)
 			return sendSSEEvent(w, map[string]any{
 				"type":            "response.completed",
 				"response":        finalResp,
@@ -1432,7 +1432,7 @@ func buildInitialResponse(responseID, model string, createdAt int64, status stri
 }
 
 // buildFinalResponse builds the final response object for streaming completion
-func buildFinalResponse(responseID, itemID, reasoningItemID, model string, createdAt int64, text, reasoning string, usage map[string]any, finishReason string, toolCalls map[int]*toolCallState) map[string]any {
+func buildFinalResponse(responseID, itemID, reasoningItemID, model string, createdAt int64, text, reasoning string, usage map[string]any, finishReason string, toolCalls map[int]*toolCallState, messageStarted bool) map[string]any {
 	output := []any{}
 
 	// Add reasoning item first if present (matching example format)
@@ -1457,15 +1457,19 @@ func buildFinalResponse(responseID, itemID, reasoningItemID, model string, creat
 		output = append(output, reasoningItem)
 	}
 
-	// Build message item with content (only if there's text content)
-	if text != "" {
-		contentParts := []any{
-			map[string]any{
-				"annotations": []any{},
-				"text":        text,
-				"type":        "output_text",
-				"logprobs":    nil,
-			},
+	// Build message item (always present when a message was started during streaming,
+	// even for tool-call-only responses where text is empty)
+	if messageStarted {
+		var contentParts []any
+		if text != "" {
+			contentParts = []any{
+				map[string]any{
+					"annotations": []any{},
+					"text":        text,
+					"type":        "output_text",
+					"logprobs":    nil,
+				},
+			}
 		}
 		messageItem := map[string]any{
 			"id":      itemID,
