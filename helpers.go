@@ -83,8 +83,12 @@ func applySamplingParams(data map[string]any, samplingParams map[string]any, log
 	}
 }
 
-// copyHeaders copies response headers from backend response to the client ResponseWriter
+// copyHeaders copies response headers from backend response to the client ResponseWriter,
+// stripping hop-by-hop headers that must not be forwarded by proxies.
 func copyHeaders(w http.ResponseWriter, resp *http.Response) {
+	for _, h := range hopByHopHeaders {
+		resp.Header.Del(h)
+	}
 	for header, values := range resp.Header {
 		for _, value := range values {
 			w.Header().Add(header, value)
