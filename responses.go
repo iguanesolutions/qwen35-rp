@@ -664,8 +664,8 @@ func convertChatToResponses(chatData map[string]any, virtualModel string, logger
 		// Add message first, then tool calls (matching OpenAI output order)
 		if len(contentParts) > 0 {
 			outputItem["content"] = contentParts
-			outputItems = append(outputItems, outputItem)
 		}
+		outputItems = append(outputItems, outputItem)
 		for _, tcItem := range pendingToolCalls {
 			outputItems = append(outputItems, tcItem)
 		}
