@@ -474,6 +474,19 @@ func convertContentPartsToChatFormat(parts []any, logger *slog.Logger) []map[str
 			imageURL, _ := partMap["image_url"].(string)
 			detail, _ := partMap["detail"].(string)
 
+			// Fall back to base64 source if image_url is not provided
+			if imageURL == "" {
+				if source, ok := partMap["source"].(map[string]any); ok {
+					if srcType, _ := source["type"].(string); srcType == "base64" {
+						mediaType, _ := source["media_type"].(string)
+						data, _ := source["data"].(string)
+						if mediaType != "" && data != "" {
+							imageURL = fmt.Sprintf("data:%s;base64,%s", mediaType, data)
+						}
+					}
+				}
+			}
+
 			chatPart := map[string]any{
 				"type": "image_url",
 				"image_url": map[string]any{
