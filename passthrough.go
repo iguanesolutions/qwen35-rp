@@ -34,11 +34,7 @@ func passthrough(httpCli *http.Client, target *url.URL) http.HandlerFunc {
 			return
 		}
 		defer outResp.Body.Close()
-		for header, values := range outResp.Header {
-			for _, value := range values {
-				w.Header().Add(header, value)
-			}
-		}
+		copyHeaders(w, outResp)
 		w.WriteHeader(outResp.StatusCode)
 		if _, err = io.Copy(w, outResp.Body); err != nil {
 			logger.Error("failed to stream back response", slog.String("error", err.Error()))
