@@ -630,7 +630,10 @@ func convertChatToResponses(chatData map[string]any, virtualModel string, logger
 	}
 
 	// Check if response was truncated (finish_reason == "length")
-	finishReason, _ := choices[0].(map[string]any)["finish_reason"].(string)
+	var finishReason string
+	if firstChoice, ok := choices[0].(map[string]any); ok {
+		finishReason, _ = firstChoice["finish_reason"].(string)
+	}
 	var incompleteDetails map[string]any
 	status := "completed"
 	if finishReason == "length" {
@@ -777,6 +780,7 @@ type responsesStreamState struct {
 	itemID                string
 	virtualModel          string
 	outputIndex           int
+	messageOutputIndex    int
 	contentIndex          int
 	hasReasoning          bool
 	reasoningItemID       string
@@ -956,16 +960,11 @@ func (s *responsesStreamState) sendCompletionEvents(w http.ResponseWriter) {
 
 	// Send message completion events if we started a message
 	if s.messageStarted {
-		msgOutputIndex := 0
-		if s.hasReasoning {
-			msgOutputIndex = 1
-		}
-
 		// response.output_text.done
 		sendSSEEvent(w, map[string]any{
 			"type":            "response.output_text.done",
 			"item_id":         s.itemID,
-			"output_index":    msgOutputIndex,
+			"output_index":    s.messageOutputIndex,
 			"content_index":   0,
 			"text":            text,
 			"sequence_number": s.seqNum,
@@ -976,7 +975,7 @@ func (s *responsesStreamState) sendCompletionEvents(w http.ResponseWriter) {
 		sendSSEEvent(w, map[string]any{
 			"type":          "response.content_part.done",
 			"item_id":       s.itemID,
-			"output_index":  msgOutputIndex,
+			"output_index":  s.messageOutputIndex,
 			"content_index": 0,
 			"part": map[string]any{
 				"type":        "output_text",
@@ -991,7 +990,7 @@ func (s *responsesStreamState) sendCompletionEvents(w http.ResponseWriter) {
 		// response.output_item.done for message
 		sendSSEEvent(w, map[string]any{
 			"type":         "response.output_item.done",
-			"output_index": msgOutputIndex,
+			"output_index": s.messageOutputIndex,
 			"item": map[string]any{
 				"id":   s.itemID,
 				"type": "message",
@@ -1130,9 +1129,11 @@ func (s *responsesStreamState) convertChatSSEEventToResponses(chatEvent map[stri
 		if s.contentIndex == 0 {
 			// First content part - add message item
 			s.messageStarted = true
+			s.messageOutputIndex = s.outputIndex
+			s.outputIndex++
 			events = append(events, map[string]any{
 				"type":            "response.output_item.added",
-				"output_index":    s.outputIndex,
+				"output_index":    s.messageOutputIndex,
 				"sequence_number": s.seqNum,
 				"item": map[string]any{
 					"id":      s.itemID,
@@ -1149,7 +1150,7 @@ func (s *responsesStreamState) convertChatSSEEventToResponses(chatEvent map[stri
 			events = append(events, map[string]any{
 				"type":          "response.content_part.added",
 				"item_id":       s.itemID,
-				"output_index":  s.outputIndex,
+				"output_index":  s.messageOutputIndex,
 				"content_index": s.contentIndex,
 				"part": map[string]any{
 					"type": "output_text",
@@ -1167,7 +1168,7 @@ func (s *responsesStreamState) convertChatSSEEventToResponses(chatEvent map[stri
 		events = append(events, map[string]any{
 			"type":            "response.output_text.delta",
 			"item_id":         s.itemID,
-			"output_index":    s.outputIndex,
+			"output_index":    s.messageOutputIndex,
 			"content_index":   0,
 			"delta":           content,
 			"sequence_number": s.seqNum,
@@ -1379,6 +1380,7 @@ func buildFinalResponse(responseID, itemID, reasoningItemID, model string, creat
 		"model":                model,
 		"object":               "response",
 		"output":               output,
+		"output_text":          text,
 		"parallel_tool_calls":  true,
 		"temperature":          nil,
 		"tool_choice":          "auto",
