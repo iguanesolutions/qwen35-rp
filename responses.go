@@ -823,7 +823,6 @@ type responsesStreamState struct {
 	virtualModel          string
 	outputIndex           int
 	messageOutputIndex    int
-	contentIndex          int
 	hasReasoning          bool
 	reasoningItemID       string
 	reasoningOutputIndex  int
@@ -1142,6 +1141,46 @@ func (s *responsesStreamState) sendCompletionEvents(w http.ResponseWriter) {
 	}
 }
 
+// startMessage emits the response.output_item.added and response.content_part.added events
+// for the assistant message item. Called once, on the first content delta or before the first
+// tool call — whichever comes first — so the message item is always present in the stream.
+func (s *responsesStreamState) startMessage() []map[string]any {
+	s.messageStarted = true
+	s.messageOutputIndex = s.outputIndex
+	s.outputIndex++
+
+	var events []map[string]any
+
+	events = append(events, map[string]any{
+		"type":            "response.output_item.added",
+		"output_index":    s.messageOutputIndex,
+		"sequence_number": s.seqNum,
+		"item": map[string]any{
+			"id":      s.itemID,
+			"type":    "message",
+			"role":    "assistant",
+			"status":  "in_progress",
+			"content": []any{},
+			"phase":   nil,
+		},
+	})
+	s.seqNum++
+
+	events = append(events, map[string]any{
+		"type":          "response.content_part.added",
+		"item_id":       s.itemID,
+		"output_index":  s.messageOutputIndex,
+		"content_index": 0,
+		"part": map[string]any{
+			"type": "output_text",
+		},
+		"sequence_number": s.seqNum,
+	})
+	s.seqNum++
+
+	return events
+}
+
 // convertChatSSEEventToResponses converts a single Chat SSE event to Responses events
 func (s *responsesStreamState) convertChatSSEEventToResponses(chatEvent map[string]any) []map[string]any {
 	var events []map[string]any
@@ -1218,39 +1257,8 @@ func (s *responsesStreamState) convertChatSSEEventToResponses(chatEvent map[stri
 
 	// Handle content (text)
 	if content, ok := delta["content"].(string); ok && content != "" {
-		if s.contentIndex == 0 {
-			// First content part - add message item
-			s.messageStarted = true
-			s.messageOutputIndex = s.outputIndex
-			s.outputIndex++
-			events = append(events, map[string]any{
-				"type":            "response.output_item.added",
-				"output_index":    s.messageOutputIndex,
-				"sequence_number": s.seqNum,
-				"item": map[string]any{
-					"id":      s.itemID,
-					"type":    "message",
-					"role":    "assistant",
-					"status":  "in_progress",
-					"content": []any{},
-					"phase":   nil,
-				},
-			})
-			s.seqNum++
-
-			// Add content part
-			events = append(events, map[string]any{
-				"type":          "response.content_part.added",
-				"item_id":       s.itemID,
-				"output_index":  s.messageOutputIndex,
-				"content_index": s.contentIndex,
-				"part": map[string]any{
-					"type": "output_text",
-				},
-				"sequence_number": s.seqNum,
-			})
-			s.seqNum++
-			s.contentIndex++
+		if !s.messageStarted {
+			events = append(events, s.startMessage()...)
 		}
 
 		// Accumulate text
@@ -1301,6 +1309,11 @@ func (s *responsesStreamState) convertChatSSEEventToResponses(chatEvent map[stri
 				// Function name (only in first chunk)
 				if name, ok := fn["name"].(string); ok && name != "" {
 					tcState.Name = name
+				}
+
+				// Ensure message item is emitted before any tool call items
+				if !s.messageStarted && !tcState.Started && tcState.ID != "" && tcState.Name != "" {
+					events = append(events, s.startMessage()...)
 				}
 
 				// Emit output_item.added on first chunk (when we have ID and name)
