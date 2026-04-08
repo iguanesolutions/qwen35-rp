@@ -68,12 +68,7 @@ func tokenize(httpCli *http.Client, target *url.URL, servedModel string) http.Ha
 		case reqData["input"] != nil:
 			// Responses API format: convert input → messages, tools → chat tools
 			logger.Info("detected Responses API format in tokenize request")
-			messages, err = convertInputToMessages(reqData["input"], reqData["instructions"], logger)
-			if err != nil {
-				logger.Error("failed to convert Responses input to messages", slog.Any("error", err))
-				httpError(ctx, w, http.StatusBadRequest)
-				return
-			}
+			messages = convertInputToMessages(reqData["input"], reqData["instructions"], logger)
 			if rawTools, ok := reqData["tools"].([]any); ok && len(rawTools) > 0 {
 				tools = convertToolsToChat(rawTools)
 			}

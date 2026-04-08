@@ -226,11 +226,7 @@ func convertResponsesToChat(reqData map[string]any, logger *slog.Logger) (map[st
 	}
 
 	// Convert input → messages
-	messages, err := convertInputToMessages(reqData["input"], reqData["instructions"], logger)
-	if err != nil {
-		return nil, err
-	}
-	chatData["messages"] = messages
+	chatData["messages"] = convertInputToMessages(reqData["input"], reqData["instructions"], logger)
 
 	// Copy sampling parameters
 	if temp, ok := reqData["temperature"]; ok {
@@ -275,7 +271,7 @@ func convertResponsesToChat(reqData map[string]any, logger *slog.Logger) (map[st
 }
 
 // convertInputToMessages converts Responses input to Chat Completions messages array
-func convertInputToMessages(input any, instructions any, logger *slog.Logger) ([]map[string]any, error) {
+func convertInputToMessages(input any, instructions any, logger *slog.Logger) []map[string]any {
 	var messages []map[string]any
 
 	// Add system instruction if present
@@ -339,7 +335,7 @@ func convertInputToMessages(input any, instructions any, logger *slog.Logger) ([
 		}
 	}
 
-	return messages, nil
+	return messages
 }
 
 // convertToolsToChat converts tools from Responses API format to Chat Completions format.
