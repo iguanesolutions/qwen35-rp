@@ -197,8 +197,14 @@ func transform(httpCli *http.Client, target *url.URL,
 				return
 			}
 
-			// Fix vLLM bugs and model name in a single pass
-			responseBody = fixNonStreamingResponse(responseBody, think, virtualModel, logger)
+			// Only attempt JSON fixes on success responses; pass through errors as-is
+			if outResp.StatusCode >= 200 && outResp.StatusCode < 300 {
+				responseBody = fixNonStreamingResponse(responseBody, think, virtualModel, logger)
+			} else {
+				logger.Warn("backend returned error for non-streaming request, passing through raw response",
+					slog.Int("status", outResp.StatusCode),
+				)
+			}
 
 			copyHeaders(w, outResp)
 			w.Header().Set("Content-Length", strconv.Itoa(len(responseBody)))
