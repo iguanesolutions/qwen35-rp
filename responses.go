@@ -833,30 +833,11 @@ func streamResponsesConverter(w http.ResponseWriter, backendBody io.ReadCloser, 
 		if n > 0 {
 			buf = append(buf, temp[:n]...)
 		}
-		if err != nil {
-			if err == io.EOF {
-				// Process any remaining buffer
-				if len(buf) > 0 {
-					s.processChatSSEBuffer(buf)
-				}
-
-				// Send completion events before response.completed
-				s.sendCompletionEvents(w)
-
-				// Send final completed event
-				finalResp := buildFinalResponse(s.responseID, s.itemID, s.reasoningItemID, s.virtualModel, now, s.currentText.String(), s.reasoningText.String(), s.lastUsage, s.finishReason, s.toolCalls)
-				sendSSEEvent(w, map[string]any{
-					"type":            "response.completed",
-					"response":        finalResp,
-					"sequence_number": s.seqNum,
-				}, s.logger)
-
-				return nil
-			}
+		if err != nil && err != io.EOF {
 			return err
 		}
 
-		// Process complete SSE events
+		// Process complete SSE events (including any received in the final EOF read)
 		for {
 			idx := bytes.Index(buf, []byte("\n\n"))
 			if idx == -1 {
@@ -873,7 +854,7 @@ func streamResponsesConverter(w http.ResponseWriter, backendBody io.ReadCloser, 
 				}
 
 				var chatEvent map[string]any
-				if err := json.Unmarshal(jsonPart, &chatEvent); err != nil {
+				if jsonErr := json.Unmarshal(jsonPart, &chatEvent); jsonErr != nil {
 					continue
 				}
 
@@ -902,49 +883,20 @@ func streamResponsesConverter(w http.ResponseWriter, backendBody io.ReadCloser, 
 				}
 			}
 		}
-	}
-}
 
-// processChatSSEBuffer processes remaining buffer data at end of stream
-func (s *responsesStreamState) processChatSSEBuffer(buf []byte) {
-	lines := bytes.Split(buf, []byte("\n"))
-	for _, line := range lines {
-		line = bytes.TrimSpace(line)
-		if len(line) == 0 {
-			continue
-		}
-		if bytes.HasPrefix(line, []byte("data: ")) {
-			jsonPart := bytes.TrimSpace(line[6:])
-			if len(jsonPart) == 0 || bytes.Equal(jsonPart, []byte("[DONE]")) {
-				continue
-			}
+		if err == io.EOF {
+			// Send completion events before response.completed
+			s.sendCompletionEvents(w)
 
-			var chatEvent map[string]any
-			if err := json.Unmarshal(jsonPart, &chatEvent); err != nil {
-				continue
-			}
+			// Send final completed event
+			finalResp := buildFinalResponse(s.responseID, s.itemID, s.reasoningItemID, s.virtualModel, now, s.currentText.String(), s.reasoningText.String(), s.lastUsage, s.finishReason, s.toolCalls)
+			sendSSEEvent(w, map[string]any{
+				"type":            "response.completed",
+				"response":        finalResp,
+				"sequence_number": s.seqNum,
+			}, s.logger)
 
-			// Capture usage if present
-			if usage, ok := chatEvent["usage"].(map[string]any); ok {
-				s.lastUsage = usage
-			}
-
-			// Capture finish_reason if present
-			if choices, ok := chatEvent["choices"].([]any); ok && len(choices) > 0 {
-				if choice, ok := choices[0].(map[string]any); ok {
-					if fr, ok := choice["finish_reason"].(string); ok && fr != "" {
-						s.finishReason = fr
-					}
-					if delta, ok := choice["delta"].(map[string]any); ok {
-						if content, ok := delta["content"].(string); ok && content != "" {
-							s.currentText.WriteString(content)
-						}
-						if reasoning, ok := delta["reasoning_content"].(string); ok && reasoning != "" {
-							s.reasoningText.WriteString(reasoning)
-						}
-					}
-				}
-			}
+			return nil
 		}
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -108,18 +109,21 @@ func applySamplingParams(data map[string]any, samplingParams map[string]any, log
 	}
 }
 
-// httpError writes HTTP error response
+// httpError writes an OpenAI-compatible JSON error response
 func httpError(ctx context.Context, w http.ResponseWriter, statusCode int) {
-	http.Error(w,
-		generateErrorClientText(ctx, statusCode),
-		statusCode,
-	)
-}
-
-// generateErrorClientText generates error text with request ID
-func generateErrorClientText(ctx context.Context, statusCode int) string {
-	return fmt.Sprintf("%s - check qwen35-rp logs for more details (request id #%v)",
+	reqID := ctx.Value(httplog.ReqIDKey)
+	message := fmt.Sprintf("%s - check qwen35-rp logs for more details (request id #%v)",
 		http.StatusText(statusCode),
-		ctx.Value(httplog.ReqIDKey),
+		reqID,
 	)
+	errResp := map[string]any{
+		"error": map[string]any{
+			"message": message,
+			"type":    http.StatusText(statusCode),
+			"code":    statusCode,
+		},
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(errResp)
 }
