@@ -248,6 +248,10 @@ func normalizeChatMessages(rawMessages []any, logger *slog.Logger) []map[string]
 			"role":    role,
 			"content": content,
 		}
+		// Preserve name field if present (multi-participant conversations, labeled messages)
+		if name, ok := msgMap["name"].(string); ok {
+			msg["name"] = name
+		}
 		// Preserve tool_call_id for tool role messages
 		if toolCallID, ok := msgMap["tool_call_id"].(string); ok {
 			msg["tool_call_id"] = toolCallID
