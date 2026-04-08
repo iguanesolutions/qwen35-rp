@@ -47,11 +47,12 @@ func joinURLPath(a, b *url.URL) (path, rawpath string) {
 	return a.Path + b.Path, apath + bpath
 }
 
-// rewriteRequestURL rewrites request URL for proxying to backend
+// rewriteRequestURL rewrites request URL and Host header for proxying to backend
 func rewriteRequestURL(req *http.Request, target *url.URL) {
 	targetQuery := target.RawQuery
 	req.URL.Scheme = target.Scheme
 	req.URL.Host = target.Host
+	req.Host = target.Host
 	req.URL.Path, req.URL.RawPath = joinURLPath(target, req.URL)
 	if targetQuery == "" || req.URL.RawQuery == "" {
 		req.URL.RawQuery = targetQuery + req.URL.RawQuery

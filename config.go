@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
@@ -74,7 +75,6 @@ func LoadConfig() (Config, error) {
 	flag.Parse()
 
 	cfg.Listen = getEnvOrFlag(*listen, "QWEN35RP_LISTEN")
-	cfg.Port = getEnvOrFlagInt(*port, "QWEN35RP_PORT")
 	cfg.Target = getEnvOrFlag(*target, "QWEN35RP_TARGET")
 	cfg.LogLevel = getEnvOrFlag(*loglevel, "QWEN35RP_LOGLEVEL")
 	cfg.ServedModelName = getEnvOrFlag(*servedModel, "QWEN35RP_SERVED_MODEL_NAME")
@@ -82,7 +82,16 @@ func LoadConfig() (Config, error) {
 	cfg.ThinkingCodingModel = getEnvOrFlag(*thinkingCoding, "QWEN35RP_THINKING_CODING_MODEL")
 	cfg.InstructGeneralModel = getEnvOrFlag(*instructGeneral, "QWEN35RP_INSTRUCT_GENERAL_MODEL")
 	cfg.InstructReasoningModel = getEnvOrFlag(*instructReasoning, "QWEN35RP_INSTRUCT_REASONING_MODEL")
-	cfg.EnforceSamplingParams = getEnvOrFlagBool(*enforceSampling, "QWEN35RP_ENFORCE_SAMPLING_PARAMS")
+
+	var err error
+	cfg.Port, err = getEnvOrFlagInt(*port, "QWEN35RP_PORT")
+	if err != nil {
+		return cfg, err
+	}
+	cfg.EnforceSamplingParams, err = getEnvOrFlagBool(*enforceSampling, "QWEN35RP_ENFORCE_SAMPLING_PARAMS")
+	if err != nil {
+		return cfg, err
+	}
 
 	return cfg, cfg.Validate()
 }
@@ -94,22 +103,26 @@ func getEnvOrFlag(flagVal string, envName string) string {
 	return flagVal
 }
 
-func getEnvOrFlagInt(flagVal int, envName string) int {
+func getEnvOrFlagInt(flagVal int, envName string) (int, error) {
 	if envVal, exists := os.LookupEnv(envName); exists {
-		if intVal, err := strconv.Atoi(envVal); err == nil {
-			return intVal
+		intVal, err := strconv.Atoi(envVal)
+		if err != nil {
+			return 0, fmt.Errorf("invalid value for %s=%q: %w", envName, envVal, err)
 		}
+		return intVal, nil
 	}
-	return flagVal
+	return flagVal, nil
 }
 
-func getEnvOrFlagBool(flagVal bool, envName string) bool {
+func getEnvOrFlagBool(flagVal bool, envName string) (bool, error) {
 	if envVal, exists := os.LookupEnv(envName); exists {
-		if boolVal, err := strconv.ParseBool(envVal); err == nil {
-			return boolVal
+		boolVal, err := strconv.ParseBool(envVal)
+		if err != nil {
+			return false, fmt.Errorf("invalid value for %s=%q: %w", envName, envVal, err)
 		}
+		return boolVal, nil
 	}
-	return flagVal
+	return flagVal, nil
 }
 
 // parseLogLevel parses a log level string, including the COMPLETE level

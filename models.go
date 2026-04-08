@@ -27,6 +27,7 @@ func models(httpCli *http.Client, target *url.URL, servedModel, thinkingGeneral,
 			httpError(ctx, w, http.StatusInternalServerError)
 			return
 		}
+		req.Host = target.Host
 		req.RequestURI = "" // Clear RequestURI for client request
 
 		// Send request to backend
