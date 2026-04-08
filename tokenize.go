@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"syscall"
 
 	"github.com/hekmon/httplog/v3"
 )
@@ -146,7 +148,12 @@ func tokenize(httpCli *http.Client, target *url.URL,
 			outResp, err := httpCli.Do(outreq)
 			if err != nil {
 				logger.Error("failed to send upstream request", slog.Any("error", err))
-				httpError(ctx, w, http.StatusBadGateway)
+				switch {
+				case errors.Is(err, syscall.ECONNREFUSED):
+					httpError(ctx, w, http.StatusBadGateway)
+				default:
+					httpError(ctx, w, http.StatusInternalServerError)
+				}
 				return
 			}
 			defer outResp.Body.Close()
@@ -211,7 +218,12 @@ func tokenize(httpCli *http.Client, target *url.URL,
 		outResp, err := httpCli.Do(outreq)
 		if err != nil {
 			logger.Error("failed to send upstream request", slog.Any("error", err))
-			httpError(ctx, w, http.StatusBadGateway)
+			switch {
+			case errors.Is(err, syscall.ECONNREFUSED):
+				httpError(ctx, w, http.StatusBadGateway)
+			default:
+				httpError(ctx, w, http.StatusInternalServerError)
+			}
 			return
 		}
 		defer outResp.Body.Close()
