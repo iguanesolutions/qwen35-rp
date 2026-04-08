@@ -350,16 +350,7 @@ func streamResponse(w http.ResponseWriter, backendBody io.ReadCloser, virtualMod
 		if n > 0 {
 			buf = append(buf, temp[:n]...)
 		}
-		if err != nil {
-			if err == io.EOF {
-				// Write any remaining data
-				if len(buf) > 0 {
-					if _, werr := w.Write(buf); werr != nil {
-						return werr
-					}
-				}
-				return nil
-			}
+		if err != nil && err != io.EOF {
 			return err
 		}
 
@@ -381,6 +372,16 @@ func streamResponse(w http.ResponseWriter, backendBody io.ReadCloser, virtualMod
 			if _, werr := w.Write(event); werr != nil {
 				return werr
 			}
+		}
+
+		if err == io.EOF {
+			// Write any remaining partial data as-is
+			if len(buf) > 0 {
+				if _, werr := w.Write(buf); werr != nil {
+					return werr
+				}
+			}
+			return nil
 		}
 	}
 }
