@@ -11,7 +11,7 @@ ADD . /build
 RUN go build -v -trimpath -ldflags "-s -w" -o qwen35-rp .
 
 FROM ${app_image}:${app_tag}
-RUN apt update && apt install -y ca-certificates curl
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
 COPY --from=go_build /build/qwen35-rp /usr/bin/qwen35-rp
 
 EXPOSE 9000
