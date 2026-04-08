@@ -92,7 +92,7 @@ func tokenize(httpCli *http.Client, target *url.URL,
 				}
 				if knownModel {
 					var kwargs map[string]any
-					if existing, exists := reqData["chat_template_kwargs"]; exists {
+					if existing, exists := reqData["chat_template_kwargs"]; exists && existing != nil {
 						var ok bool
 						kwargs, ok = existing.(map[string]any)
 						if !ok {

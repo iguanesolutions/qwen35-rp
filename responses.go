@@ -112,7 +112,7 @@ func responses(httpCli *http.Client, target *url.URL,
 
 		// Set thinking mode via chat_template_kwargs
 		kwargs, ok := chatData["chat_template_kwargs"]
-		if ok {
+		if ok && kwargs != nil {
 			kwargsMap, ok := kwargs.(map[string]any)
 			if !ok {
 				logger.Error("chat_template_kwargs is not a map[string]any")

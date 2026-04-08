@@ -260,7 +260,7 @@ func transform(httpCli *http.Client, target *url.URL,
 		data["model"] = servedModel
 		// set thinking extra body parameter
 		kwargs, ok := data["chat_template_kwargs"]
-		if ok {
+		if ok && kwargs != nil {
 			kwargsMap, ok := kwargs.(map[string]any)
 			if !ok {
 				logger.Error("chat_template_kwargs is not a map[string]any")
