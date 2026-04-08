@@ -24,6 +24,7 @@ func tokenize(httpCli *http.Client, target *url.URL, servedModel string) http.Ha
 		ctx := r.Context()
 
 		// Read request body
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
 		requestBody, err := io.ReadAll(r.Body)
 		if err != nil {
 			logger.Error("failed to read body", slog.String("error", err.Error()))

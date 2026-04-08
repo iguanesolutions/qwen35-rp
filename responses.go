@@ -36,6 +36,7 @@ func responses(httpCli *http.Client, target *url.URL,
 		var think, stream bool
 
 		// Read request body
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
 		requestBody, err := io.ReadAll(r.Body)
 		if err != nil {
 			logger.Error("failed to read body", slog.String("error", err.Error()))

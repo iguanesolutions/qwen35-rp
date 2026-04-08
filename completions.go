@@ -61,6 +61,7 @@ func transform(httpCli *http.Client, target *url.URL,
 		ctx := r.Context()
 		var think, stream bool // Track thinking mode and streaming for response fixing
 		// Read request body
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
 		requestBody, err := io.ReadAll(r.Body)
 		if err != nil {
 			logger.Error("failed to read body", slog.String("error", err.Error()))

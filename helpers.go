@@ -59,6 +59,11 @@ func rewriteRequestURL(req *http.Request, target *url.URL) {
 	}
 }
 
+// maxRequestBodySize is the maximum allowed request body size (100 MB).
+// This is a DoS safeguard, not a functional limit — conversation histories
+// with base64-encoded images can legitimately be very large.
+const maxRequestBodySize = 100 << 20 // 100 MB
+
 // hopByHopHeaders lists headers that must not be forwarded by proxies (RFC 7230 §6.1)
 var hopByHopHeaders = []string{
 	"Connection",

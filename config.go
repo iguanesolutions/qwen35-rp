@@ -30,8 +30,8 @@ func (c Config) Validate() error {
 	if c.Listen == "" {
 		return errors.New("listen address cannot be empty")
 	}
-	if c.Port <= 1024 || c.Port > 65535 {
-		return errors.New("port must be a positive integer between 1024 and 65535")
+	if c.Port < 1024 || c.Port > 65535 {
+		return errors.New("port must be between 1024 and 65535")
 	}
 	if c.Target == "" {
 		return errors.New("target cannot be empty")
