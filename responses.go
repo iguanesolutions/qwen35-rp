@@ -878,44 +878,44 @@ func streamResponsesConverter(w http.ResponseWriter, backendBody io.ReadCloser, 
 			event := buf[:idx+2]
 			buf = buf[idx+2:]
 
-			if bytes.HasPrefix(event, []byte("data: ")) {
-				jsonPart := bytes.TrimSpace(event[6:])
-				if len(jsonPart) == 0 || bytes.Equal(jsonPart, []byte("[DONE]")) {
+			// Extract the data line from the event (handles multi-line SSE events
+			// with id:, event:, retry: fields before the data: line)
+			jsonPart := extractSSEDataJSON(event)
+			if jsonPart == nil {
+				continue
+			}
+
+			var chatEvent map[string]any
+			if jsonErr := json.Unmarshal(jsonPart, &chatEvent); jsonErr != nil {
+				continue
+			}
+
+			// Capture usage and finish_reason from chunk
+			if usage, ok := chatEvent["usage"].(map[string]any); ok {
+				s.lastUsage = usage
+			}
+			if choices, ok := chatEvent["choices"].([]any); ok && len(choices) > 0 {
+				if choice, ok := choices[0].(map[string]any); ok {
+					if fr, ok := choice["finish_reason"].(string); ok && fr != "" {
+						s.finishReason = fr
+					}
+				}
+			}
+
+			// Convert Chat event to Responses events
+			respEvents := s.convertChatSSEEventToResponses(chatEvent)
+
+			for _, respEvent := range respEvents {
+				eventJSON, jerr := json.Marshal(respEvent)
+				if jerr != nil {
+					logger.Error("failed to marshal streaming event", slog.Any("error", jerr))
 					continue
 				}
-
-				var chatEvent map[string]any
-				if jsonErr := json.Unmarshal(jsonPart, &chatEvent); jsonErr != nil {
-					continue
+				if _, werr := fmt.Fprintf(w, "data: %s\n\n", eventJSON); werr != nil {
+					return werr
 				}
-
-				// Capture usage and finish_reason from chunk
-				if usage, ok := chatEvent["usage"].(map[string]any); ok {
-					s.lastUsage = usage
-				}
-				if choices, ok := chatEvent["choices"].([]any); ok && len(choices) > 0 {
-					if choice, ok := choices[0].(map[string]any); ok {
-						if fr, ok := choice["finish_reason"].(string); ok && fr != "" {
-							s.finishReason = fr
-						}
-					}
-				}
-
-				// Convert Chat event to Responses events
-				respEvents := s.convertChatSSEEventToResponses(chatEvent)
-
-				for _, respEvent := range respEvents {
-					eventJSON, jerr := json.Marshal(respEvent)
-					if jerr != nil {
-						logger.Error("failed to marshal streaming event", slog.Any("error", jerr))
-						continue
-					}
-					if _, werr := fmt.Fprintf(w, "data: %s\n\n", eventJSON); werr != nil {
-						return werr
-					}
-					if flusher, ok := w.(http.Flusher); ok {
-						flusher.Flush()
-					}
+				if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
 				}
 			}
 		}
@@ -923,46 +923,43 @@ func streamResponsesConverter(w http.ResponseWriter, backendBody io.ReadCloser, 
 		if err == io.EOF {
 			// Process any remaining partial SSE event in buffer
 			if len(buf) > 0 {
-				remaining := bytes.TrimSpace(buf)
-				if bytes.HasPrefix(remaining, []byte("data: ")) {
-					jsonPart := bytes.TrimSpace(remaining[6:])
-					if len(jsonPart) > 0 && !bytes.Equal(jsonPart, []byte("[DONE]")) {
-						var chatEvent map[string]any
-						if jsonErr := json.Unmarshal(jsonPart, &chatEvent); jsonErr == nil {
-							// Capture usage and finish_reason
-							if usage, ok := chatEvent["usage"].(map[string]any); ok {
-								s.lastUsage = usage
-							}
-							if choices, ok := chatEvent["choices"].([]any); ok && len(choices) > 0 {
-								if choice, ok := choices[0].(map[string]any); ok {
-									if fr, ok := choice["finish_reason"].(string); ok && fr != "" {
-										s.finishReason = fr
-									}
-								}
-							}
-							respEvents := s.convertChatSSEEventToResponses(chatEvent)
-							for _, respEvent := range respEvents {
-								eventJSON, jerr := json.Marshal(respEvent)
-								if jerr != nil {
-									logger.Error("failed to marshal streaming event", slog.Any("error", jerr))
-									continue
-								}
-								if _, werr := fmt.Fprintf(w, "data: %s\n\n", eventJSON); werr != nil {
-									return werr
-								}
-								if flusher, ok := w.(http.Flusher); ok {
-									flusher.Flush()
-								}
-							}
-						} else {
-							logger.Warn("discarding unparseable partial SSE event at EOF",
-								slog.Int("bytes", len(remaining)),
-							)
+				jsonPart := extractSSEDataJSON(buf)
+				if jsonPart != nil {
+					var chatEvent map[string]any
+					if jsonErr := json.Unmarshal(jsonPart, &chatEvent); jsonErr == nil {
+						// Capture usage and finish_reason
+						if usage, ok := chatEvent["usage"].(map[string]any); ok {
+							s.lastUsage = usage
 						}
+						if choices, ok := chatEvent["choices"].([]any); ok && len(choices) > 0 {
+							if choice, ok := choices[0].(map[string]any); ok {
+								if fr, ok := choice["finish_reason"].(string); ok && fr != "" {
+									s.finishReason = fr
+								}
+							}
+						}
+						respEvents := s.convertChatSSEEventToResponses(chatEvent)
+						for _, respEvent := range respEvents {
+							eventJSON, jerr := json.Marshal(respEvent)
+							if jerr != nil {
+								logger.Error("failed to marshal streaming event", slog.Any("error", jerr))
+								continue
+							}
+							if _, werr := fmt.Fprintf(w, "data: %s\n\n", eventJSON); werr != nil {
+								return werr
+							}
+							if flusher, ok := w.(http.Flusher); ok {
+								flusher.Flush()
+							}
+						}
+					} else {
+						logger.Warn("discarding unparseable partial SSE event at EOF",
+							slog.Int("bytes", len(buf)),
+						)
 					}
-				} else {
+				} else if len(bytes.TrimSpace(buf)) > 0 {
 					logger.Warn("discarding non-SSE data remaining at EOF",
-						slog.Int("bytes", len(remaining)),
+						slog.Int("bytes", len(buf)),
 					)
 				}
 			}

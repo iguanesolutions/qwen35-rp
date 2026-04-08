@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -143,4 +144,24 @@ func httpError(ctx context.Context, w http.ResponseWriter, statusCode int) {
 	if err := json.NewEncoder(w).Encode(errResp); err != nil {
 		logger.Error("failed to write error response", slog.Any("error", err))
 	}
+}
+
+// extractSSEDataJSON extracts the JSON payload from an SSE event.
+// It handles multi-line events by scanning all lines for the first "data: " line
+// that contains parseable JSON (skipping [DONE] and empty data lines).
+// Returns nil if no valid JSON data line is found.
+func extractSSEDataJSON(event []byte) []byte {
+	trimmed := bytes.TrimRight(event, "\n\r ")
+	lines := bytes.Split(trimmed, []byte("\n"))
+	for _, line := range lines {
+		if !bytes.HasPrefix(line, []byte("data: ")) {
+			continue
+		}
+		jsonPart := bytes.TrimSpace(line[6:])
+		if len(jsonPart) == 0 || bytes.Equal(jsonPart, []byte("[DONE]")) {
+			continue
+		}
+		return jsonPart
+	}
+	return nil
 }
