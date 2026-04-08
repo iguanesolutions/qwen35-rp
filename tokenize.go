@@ -11,13 +11,18 @@ import (
 	"github.com/hekmon/httplog/v3"
 )
 
-// tokenize handles the /tokenize endpoint.
+// tokenize handles the /tokenize endpoint, which proxies to vLLM's /tokenize.
 //
-// Two modes:
-//   - {"prompt": "..."} — raw text tokenization, forwarded as-is (no chat template)
-//   - {"messages": [...]} — messages tokenization with chat template applied;
-//     individual messages can use Chat Completions or Responses API content part formats
-//     (e.g. input_text), which are normalized to Chat Completions format before forwarding
+// vLLM's /tokenize accepts two modes:
+//   - {"prompt": "..."} — raw text tokenization (no chat template)
+//   - {"messages": [...]} — applies the model's chat template (via apply_chat_template),
+//     then tokenizes the resulting prompt
+//
+// The proxy adds value on the messages path: individual messages and tools may use
+// either Chat Completions or Responses API formats (e.g. input_text content parts,
+// flat tool definitions). Since vLLM's apply_chat_template expects Chat Completions
+// format, the proxy normalizes messages and tools before forwarding.
+// The prompt path is forwarded as-is — no normalization needed.
 func tokenize(httpCli *http.Client, target *url.URL, servedModel string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logger := logger.With(httplog.GetReqIDSLogAttr(r.Context()))
@@ -59,9 +64,9 @@ func tokenize(httpCli *http.Client, target *url.URL, servedModel string) http.Ha
 				return
 			}
 			messages = normalizeChatMessages(rawMessages, logger)
-			// Tools are already in Chat Completions format, pass through as-is
+			// Normalize tools to Chat Completions format (vLLM's apply_chat_template expects it)
 			if rawTools, ok := reqData["tools"].([]any); ok && len(rawTools) > 0 {
-				tools = passThroughTools(rawTools)
+				tools = normalizeTools(rawTools)
 			}
 
 		case reqData["prompt"] != nil:
@@ -221,12 +226,40 @@ func normalizeChatMessages(rawMessages []any, logger *slog.Logger) []map[string]
 	return messages
 }
 
-// passThroughTools converts []any to []map[string]any, passing tools through as-is.
-// Used for Chat Completions format tools that are already in the correct structure.
-func passThroughTools(rawTools []any) []map[string]any {
+// normalizeTools normalizes tools to Chat Completions format.
+// If a tool is already in Chat Completions format (has "function" key), it's passed through.
+// If a tool is in Responses API format (flat: name/description/parameters at top level), it's converted.
+func normalizeTools(rawTools []any) []map[string]any {
 	tools := make([]map[string]any, 0, len(rawTools))
 	for _, t := range rawTools {
-		if toolMap, ok := t.(map[string]any); ok {
+		toolMap, ok := t.(map[string]any)
+		if !ok {
+			continue
+		}
+		if toolMap["function"] != nil {
+			// Already Chat Completions format
+			tools = append(tools, toolMap)
+		} else if toolMap["name"] != nil {
+			// Responses API format (flat) — convert to Chat Completions format
+			funcDef := map[string]any{}
+			if name, ok := toolMap["name"].(string); ok {
+				funcDef["name"] = name
+			}
+			if desc, ok := toolMap["description"].(string); ok {
+				funcDef["description"] = desc
+			}
+			if params, ok := toolMap["parameters"]; ok {
+				funcDef["parameters"] = params
+			}
+			if strict, ok := toolMap["strict"]; ok {
+				funcDef["strict"] = strict
+			}
+			tools = append(tools, map[string]any{
+				"type":     "function",
+				"function": funcDef,
+			})
+		} else {
+			// Unknown format, pass through
 			tools = append(tools, toolMap)
 		}
 	}
