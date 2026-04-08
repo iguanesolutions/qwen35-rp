@@ -867,18 +867,22 @@ func streamResponsesConverter(w http.ResponseWriter, backendBody io.ReadCloser, 
 
 	// Send initial response.created event
 	initialResp := buildInitialResponse(s.responseID, s.virtualModel, now, "in_progress")
-	sendSSEEvent(w, map[string]any{
+	if err := sendSSEEvent(w, map[string]any{
 		"type":            "response.created",
 		"response":        initialResp,
 		"sequence_number": s.seqNum,
-	}, s.logger)
+	}, s.logger); err != nil {
+		return err
+	}
 	s.seqNum++
 
-	sendSSEEvent(w, map[string]any{
+	if err := sendSSEEvent(w, map[string]any{
 		"type":            "response.in_progress",
 		"response":        initialResp,
 		"sequence_number": s.seqNum,
-	}, s.logger)
+	}, s.logger); err != nil {
+		return err
+	}
 	s.seqNum++
 
 	for {
@@ -992,41 +996,43 @@ func streamResponsesConverter(w http.ResponseWriter, backendBody io.ReadCloser, 
 			}
 
 			// Send completion events before response.completed
-			s.sendCompletionEvents(w)
+			if err := s.sendCompletionEvents(w); err != nil {
+				return err
+			}
 
 			// Send final completed event
 			finalResp := buildFinalResponse(s.responseID, s.itemID, s.reasoningItemID, s.virtualModel, now, s.currentText.String(), s.reasoningText.String(), s.lastUsage, s.finishReason, s.toolCalls)
-			sendSSEEvent(w, map[string]any{
+			return sendSSEEvent(w, map[string]any{
 				"type":            "response.completed",
 				"response":        finalResp,
 				"sequence_number": s.seqNum,
 			}, s.logger)
-
-			return nil
 		}
 	}
 }
 
 // sendCompletionEvents sends the completion events before response.completed
-func (s *responsesStreamState) sendCompletionEvents(w http.ResponseWriter) {
+func (s *responsesStreamState) sendCompletionEvents(w http.ResponseWriter) error {
 	text := s.currentText.String()
 	reasoning := s.reasoningText.String()
 
 	// Send reasoning completion events if we had reasoning
 	if s.hasReasoning && s.reasoningItemID != "" {
 		// response.reasoning_text.done
-		sendSSEEvent(w, map[string]any{
+		if err := sendSSEEvent(w, map[string]any{
 			"type":            "response.reasoning_text.done",
 			"item_id":         s.reasoningItemID,
 			"output_index":    s.reasoningOutputIndex,
 			"content_index":   0,
 			"text":            reasoning,
 			"sequence_number": s.seqNum,
-		}, s.logger)
+		}, s.logger); err != nil {
+			return err
+		}
 		s.seqNum++
 
 		// response.reasoning_part.done
-		sendSSEEvent(w, map[string]any{
+		if err := sendSSEEvent(w, map[string]any{
 			"type":          "response.reasoning_part.done",
 			"item_id":       s.reasoningItemID,
 			"output_index":  s.reasoningOutputIndex,
@@ -1036,11 +1042,13 @@ func (s *responsesStreamState) sendCompletionEvents(w http.ResponseWriter) {
 				"text": reasoning,
 			},
 			"sequence_number": s.seqNum,
-		}, s.logger)
+		}, s.logger); err != nil {
+			return err
+		}
 		s.seqNum++
 
 		// response.output_item.done for reasoning
-		sendSSEEvent(w, map[string]any{
+		if err := sendSSEEvent(w, map[string]any{
 			"type":         "response.output_item.done",
 			"output_index": s.reasoningOutputIndex,
 			"item": map[string]any{
@@ -1057,25 +1065,29 @@ func (s *responsesStreamState) sendCompletionEvents(w http.ResponseWriter) {
 				"status":            "completed",
 			},
 			"sequence_number": s.seqNum,
-		}, s.logger)
+		}, s.logger); err != nil {
+			return err
+		}
 		s.seqNum++
 	}
 
 	// Send message completion events if we started a message
 	if s.messageStarted {
 		// response.output_text.done
-		sendSSEEvent(w, map[string]any{
+		if err := sendSSEEvent(w, map[string]any{
 			"type":            "response.output_text.done",
 			"item_id":         s.itemID,
 			"output_index":    s.messageOutputIndex,
 			"content_index":   0,
 			"text":            text,
 			"sequence_number": s.seqNum,
-		}, s.logger)
+		}, s.logger); err != nil {
+			return err
+		}
 		s.seqNum++
 
 		// response.content_part.done
-		sendSSEEvent(w, map[string]any{
+		if err := sendSSEEvent(w, map[string]any{
 			"type":          "response.content_part.done",
 			"item_id":       s.itemID,
 			"output_index":  s.messageOutputIndex,
@@ -1087,11 +1099,13 @@ func (s *responsesStreamState) sendCompletionEvents(w http.ResponseWriter) {
 				"logprobs":    nil,
 			},
 			"sequence_number": s.seqNum,
-		}, s.logger)
+		}, s.logger); err != nil {
+			return err
+		}
 		s.seqNum++
 
 		// response.output_item.done for message
-		sendSSEEvent(w, map[string]any{
+		if err := sendSSEEvent(w, map[string]any{
 			"type":         "response.output_item.done",
 			"output_index": s.messageOutputIndex,
 			"item": map[string]any{
@@ -1110,7 +1124,9 @@ func (s *responsesStreamState) sendCompletionEvents(w http.ResponseWriter) {
 				"phase":  nil,
 			},
 			"sequence_number": s.seqNum,
-		}, s.logger)
+		}, s.logger); err != nil {
+			return err
+		}
 		s.seqNum++
 	}
 
@@ -1126,17 +1142,19 @@ func (s *responsesStreamState) sendCompletionEvents(w http.ResponseWriter) {
 			args := tc.Arguments.String()
 
 			// response.function_call_arguments.done
-			sendSSEEvent(w, map[string]any{
+			if err := sendSSEEvent(w, map[string]any{
 				"type":            "response.function_call_arguments.done",
 				"item_id":         tc.ItemID,
 				"output_index":    tc.Index,
 				"arguments":       args,
 				"sequence_number": s.seqNum,
-			}, s.logger)
+			}, s.logger); err != nil {
+				return err
+			}
 			s.seqNum++
 
 			// response.output_item.done for function_call
-			sendSSEEvent(w, map[string]any{
+			if err := sendSSEEvent(w, map[string]any{
 				"type":         "response.output_item.done",
 				"output_index": tc.Index,
 				"item": map[string]any{
@@ -1148,10 +1166,13 @@ func (s *responsesStreamState) sendCompletionEvents(w http.ResponseWriter) {
 					"status":    "completed",
 				},
 				"sequence_number": s.seqNum,
-			}, s.logger)
+			}, s.logger); err != nil {
+				return err
+			}
 			s.seqNum++
 		}
 	}
+	return nil
 }
 
 // startMessage emits the response.output_item.added and response.content_part.added events
@@ -1522,21 +1543,20 @@ func buildFinalResponse(responseID, itemID, reasoningItemID, model string, creat
 }
 
 // sendSSEEvent writes an SSE event to the response
-func sendSSEEvent(w http.ResponseWriter, event map[string]any, logger *slog.Logger) {
+func sendSSEEvent(w http.ResponseWriter, event map[string]any, logger *slog.Logger) error {
 	jsonBytes, err := json.Marshal(event)
 	if err != nil {
-		logger.Error("failed to marshal SSE event", slog.Any("error", err))
-		return
+		return fmt.Errorf("failed to marshal SSE event: %w", err)
 	}
 
 	if _, err := fmt.Fprintf(w, "data: %s\n\n", jsonBytes); err != nil {
-		logger.Error("failed to write SSE event", slog.Any("error", err))
-		return
+		return fmt.Errorf("failed to write SSE event: %w", err)
 	}
 
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}
+	return nil
 }
 
 // idCounter is an atomic counter to ensure unique IDs even when called in tight succession
