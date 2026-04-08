@@ -870,7 +870,12 @@ func streamResponsesConverter(w http.ResponseWriter, backendBody io.ReadCloser, 
 				respEvents := s.convertChatSSEEventToResponses(chatEvent)
 
 				for _, respEvent := range respEvents {
-					if _, werr := fmt.Fprintf(w, "data: %s\n\n", mustMarshal(respEvent)); werr != nil {
+					eventJSON, jerr := json.Marshal(respEvent)
+					if jerr != nil {
+						logger.Error("failed to marshal streaming event", slog.Any("error", jerr))
+						continue
+					}
+					if _, werr := fmt.Fprintf(w, "data: %s\n\n", eventJSON); werr != nil {
 						return werr
 					}
 					if flusher, ok := w.(http.Flusher); ok {
@@ -1426,11 +1431,3 @@ func generateSimpleID() string {
 	return fmt.Sprintf("%d_%d", time.Now().UnixNano()%1000000000000, count)
 }
 
-// mustMarshal marshals JSON or panics
-func mustMarshal(v any) []byte {
-	data, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
-	}
-	return data
-}
