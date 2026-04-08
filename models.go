@@ -60,7 +60,9 @@ func models(httpCli *http.Client, target *url.URL, servedModel, thinkingGeneral,
 			logger.Warn("no models in backend response, passing through")
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(resp.StatusCode)
-			w.Write(body)
+			if _, err := w.Write(body); err != nil {
+				logger.Error("failed to write response", slog.Any("error", err))
+			}
 			return
 		}
 
@@ -121,7 +123,9 @@ func models(httpCli *http.Client, target *url.URL, servedModel, thinkingGeneral,
 		// Write response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.StatusCode)
-		w.Write(enrichedBody)
+		if _, err = w.Write(enrichedBody); err != nil {
+			logger.Error("failed to write response", slog.Any("error", err))
+		}
 		logger.Info("enriched /v1/models response with 4 virtual models")
 	}
 }
