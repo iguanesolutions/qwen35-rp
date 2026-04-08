@@ -319,9 +319,39 @@ func convertResponsesToChat(reqData map[string]any, logger *slog.Logger) (map[st
 		}
 	}
 
-	// Copy response_format if present
+	// Copy response_format if present (Chat Completions style takes precedence)
 	if respFormat, ok := reqData["response_format"]; ok {
 		chatData["response_format"] = respFormat
+	} else if textCfg, ok := reqData["text"].(map[string]any); ok {
+		// Map Responses API text.format to Chat Completions response_format
+		if format, ok := textCfg["format"].(map[string]any); ok {
+			formatType, _ := format["type"].(string)
+			switch formatType {
+			case "json_schema":
+				// Responses: {type, name, schema, strict}
+				// Chat Completions: {type: "json_schema", json_schema: {name, schema, strict}}
+				jsonSchema := make(map[string]any)
+				if name, ok := format["name"]; ok {
+					jsonSchema["name"] = name
+				}
+				if schema, ok := format["schema"]; ok {
+					jsonSchema["schema"] = schema
+				}
+				if strict, ok := format["strict"]; ok {
+					jsonSchema["strict"] = strict
+				}
+				chatData["response_format"] = map[string]any{
+					"type":        "json_schema",
+					"json_schema": jsonSchema,
+				}
+			case "json_object":
+				chatData["response_format"] = map[string]any{
+					"type": "json_object",
+				}
+			case "text":
+				// text is the default, no need to set response_format
+			}
+		}
 	}
 
 	// Copy user identifier for end-user tracking
