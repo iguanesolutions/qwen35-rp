@@ -540,6 +540,14 @@ func convertContentPartsToChatFormat(parts []any, logger *slog.Logger) []map[str
 			}
 			chatParts = append(chatParts, chatPart)
 
+		// Responses API output format (from previous assistant turn)
+		case "output_text":
+			text, _ := partMap["text"].(string)
+			chatParts = append(chatParts, map[string]any{
+				"type": "text",
+				"text": text,
+			})
+
 		// Chat Completions / vLLM native format - ensure correct structure
 		case "text":
 			text, _ := partMap["text"].(string)
