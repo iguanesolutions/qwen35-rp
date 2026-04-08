@@ -54,6 +54,138 @@ var (
 	}
 )
 
+// legacyCompletions handles /v1/completions (text completions API).
+// Unlike chat completions, this endpoint uses raw prompts with no chat template.
+// We only validate the virtual model name, swap it to the served model, and fix
+// the model name in the response. No sampling params or chat_template_kwargs.
+func legacyCompletions(httpCli *http.Client, target *url.URL,
+	servedModel, thinkingGeneral, thinkingCoding, instructGeneral, instructReasoning string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logger := logger.With(httplog.GetReqIDSLogAttr(r.Context()))
+		ctx := r.Context()
+		// Read request body
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+		requestBody, err := io.ReadAll(r.Body)
+		if err != nil {
+			logger.Error("failed to read body", slog.String("error", err.Error()))
+			httpError(ctx, w, readBodyStatusCode(err))
+			return
+		}
+		// Parse request body
+		var data map[string]any
+		if err = json.Unmarshal(requestBody, &data); err != nil {
+			logger.Error("failed to parse body as JSON", slog.String("error", err.Error()))
+			httpError(ctx, w, http.StatusBadRequest)
+			return
+		}
+		modelName, ok := data["model"].(string)
+		if !ok {
+			logger.Error("missing/invalid model in request body")
+			httpError(ctx, w, http.StatusBadRequest)
+			return
+		}
+		// Validate virtual model name
+		switch modelName {
+		case thinkingGeneral, thinkingCoding, instructGeneral, instructReasoning:
+			logger.Info("legacy completions model matched", slog.String("virtual_model", modelName))
+		default:
+			logger.Error("unsupported model", slog.String("model", modelName))
+			httpError(ctx, w, http.StatusBadRequest)
+			return
+		}
+		// Track streaming mode for response fixing
+		var stream bool
+		if streamVal, ok := data["stream"]; ok {
+			stream, _ = streamVal.(bool)
+		}
+		// Swap model name, preserve everything else
+		virtualModel := modelName
+		data["model"] = servedModel
+		requestBody, err = json.Marshal(data)
+		if err != nil {
+			logger.Error("failed to marshal request body", slog.Any("error", err))
+			httpError(ctx, w, http.StatusInternalServerError)
+			return
+		}
+		logger.Debug("rewritten request body", slog.String("body", string(requestBody)))
+		modifiedRequests.Add(1)
+		// Prepare and send outgoing request
+		outreq := r.Clone(ctx)
+		rewriteRequestURL(outreq, target)
+		stripHopByHopHeaders(outreq)
+		outreq.Body = io.NopCloser(bytes.NewReader(requestBody))
+		outreq.ContentLength = int64(len(requestBody))
+		outreq.RequestURI = ""
+		outResp, err := httpCli.Do(outreq)
+		if err != nil {
+			logger.Error("failed to send upstream request", slog.Any("error", err))
+			switch {
+			case errors.Is(err, syscall.ECONNREFUSED):
+				httpError(ctx, w, http.StatusBadGateway)
+			default:
+				httpError(ctx, w, http.StatusInternalServerError)
+			}
+			return
+		}
+		defer outResp.Body.Close()
+		if stream && outResp.StatusCode >= 200 && outResp.StatusCode < 300 {
+			logger.Debug("streaming response to client with model name fix")
+			copyHeaders(w, outResp)
+			w.WriteHeader(outResp.StatusCode)
+			if err = streamResponse(w, outResp.Body, virtualModel, logger); err != nil {
+				logger.Error("failed to stream response", slog.String("error", err.Error()))
+			}
+		} else if stream {
+			logger.Warn("backend returned error for streaming request, passing through raw response",
+				slog.Int("status", outResp.StatusCode),
+			)
+			copyHeaders(w, outResp)
+			w.WriteHeader(outResp.StatusCode)
+			if _, err = io.Copy(w, outResp.Body); err != nil {
+				logger.Error("failed to write error response", slog.String("error", err.Error()))
+			}
+		} else {
+			responseBody, err := io.ReadAll(outResp.Body)
+			if err != nil {
+				logger.Error("failed to read response body", slog.String("error", err.Error()))
+				httpError(ctx, w, http.StatusInternalServerError)
+				return
+			}
+			// Only fix model name on success; pass through errors as-is
+			if outResp.StatusCode >= 200 && outResp.StatusCode < 300 {
+				responseBody = fixModelNameInResponse(responseBody, virtualModel, logger)
+			}
+			copyHeaders(w, outResp)
+			w.Header().Set("Content-Length", strconv.Itoa(len(responseBody)))
+			w.WriteHeader(outResp.StatusCode)
+			if _, err = w.Write(responseBody); err != nil {
+				logger.Error("failed to write response", slog.String("error", err.Error()))
+			}
+		}
+	}
+}
+
+// fixModelNameInResponse replaces the backend model name with the virtual model name in a JSON response.
+func fixModelNameInResponse(responseBody []byte, virtualModel string, logger *slog.Logger) []byte {
+	var data map[string]any
+	if err := json.Unmarshal(responseBody, &data); err != nil {
+		return responseBody
+	}
+	if modelStr, ok := data["model"].(string); ok {
+		logger.Debug("fixing model name in response",
+			slog.String("original", modelStr),
+			slog.String("replacement", virtualModel),
+		)
+		data["model"] = virtualModel
+		fixedBody, err := json.Marshal(data)
+		if err != nil {
+			return responseBody
+		}
+		return fixedBody
+	}
+	return responseBody
+}
+
 func transform(httpCli *http.Client, target *url.URL,
 	servedModel, thinkingGeneral, thinkingCoding, instructGeneral, instructReasoning string, enforceSamplingParams bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

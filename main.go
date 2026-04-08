@@ -79,9 +79,9 @@ func main() {
 		),
 	))
 	http.HandleFunc("POST /v1/completions", httplogger.LogFunc(
-		transform(httpClient, backendURL,
+		legacyCompletions(httpClient, backendURL,
 			cfg.ServedModelName, cfg.ThinkingGeneralModel, cfg.ThinkingCodingModel,
-			cfg.InstructGeneralModel, cfg.InstructReasoningModel, cfg.EnforceSamplingParams,
+			cfg.InstructGeneralModel, cfg.InstructReasoningModel,
 		),
 	))
 	// Models endpoint handler (enriches backend models with virtual model names)
