@@ -1081,7 +1081,7 @@ func (s *responsesStreamState) sendCompletionEvents(w http.ResponseWriter) error
 					},
 				},
 				"encrypted_content": nil,
-				"status":            "completed",
+				"status":            nil,
 			},
 			"sequence_number": s.seqNum,
 		}, s.logger); err != nil {
