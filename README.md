@@ -17,9 +17,9 @@ This proxy's primary purpose is to:
    - `enable_thinking=false` for instruct modes (general and reasoning)
 4. **Rewrite the model name** to the actual backend model name (e.g., `Qwen/Qwen3.5-397B-A17B-FP8`) before forwarding to vLLM
 5. **Fix vLLM response bugs** where non-thinking, non-streaming responses incorrectly place content in `reasoning_content` or `reasoning` fields instead of `content`
-7. **Enrich `/v1/models` endpoint** by fetching backend models and exposing 4 virtual models with the same metadata (permissions, max_model_len, etc.)
-8. **Provide OpenAI Responses API compatibility** (`/v1/responses`) by converting requests to Chat Completions format and responses back to Responses format. This conversion is necessary because only vLLM's Chat Completions endpoint supports `chat_template_kwargs`, which is required to control Qwen's thinking mode (`enable_thinking=true/false`)
-9. **Provide a `/tokenize` endpoint** for tokenizing messages and counting tokens before making actual generation requests
+6. **Enrich `/v1/models` endpoint** by fetching backend models and exposing 4 virtual models with the same metadata (permissions, max_model_len, etc.)
+7. **Provide OpenAI Responses API compatibility** (`/v1/responses`) by converting requests to Chat Completions format and responses back to Responses format. This conversion is necessary because only vLLM's Chat Completions endpoint supports `chat_template_kwargs`, which is required to control Qwen's thinking mode (`enable_thinking=true/false`)
+8. **Provide a `/tokenize` endpoint** for tokenizing messages and counting tokens before making actual generation requests
 
 ## Installation
 
@@ -64,10 +64,10 @@ Configure the proxy using command-line flags or environment variables:
 | `-target` | `QWEN35RP_TARGET` | `http://127.0.0.1:8000` | Backend target URL |
 | `-loglevel` | `QWEN35RP_LOGLEVEL` | `INFO` | Log level (COMPLETE, DEBUG, INFO, WARN, ERROR) |
 | `-served-model` | `QWEN35RP_SERVED_MODEL_NAME` | (required) | Backend model name to use in outgoing requests |
-| `-thinking-general` | `QWEN35RP_THINKING_GENERAL_MODEL` | (required) | Name of the thinking-general model (incoming request identifier) |
-| `-thinking-coding` | `QWEN35RP_THINKING_CODING_MODEL` | (required) | Name of the thinking-coding model (incoming request identifier) |
-| `-instruct-general` | `QWEN35RP_INSTRUCT_GENERAL_MODEL` | (required) | Name of the instruct-general model (incoming request identifier) |
-| `-instruct-reasoning` | `QWEN35RP_INSTRUCT_REASONING_MODEL` | (required) | Name of the instruct-reasoning model (incoming request identifier) |
+| `-thinking-general` | `QWEN35RP_THINKING_GENERAL_MODEL` | `qwen3.5-thinking-general` | Name of the thinking-general model (incoming request identifier) |
+| `-thinking-coding` | `QWEN35RP_THINKING_CODING_MODEL` | `qwen3.5-thinking-coding` | Name of the thinking-coding model (incoming request identifier) |
+| `-instruct-general` | `QWEN35RP_INSTRUCT_GENERAL_MODEL` | `qwen3.5-instruct-general` | Name of the instruct-general model (incoming request identifier) |
+| `-instruct-reasoning` | `QWEN35RP_INSTRUCT_REASONING_MODEL` | `qwen3.5-instruct-reasoning` | Name of the instruct-reasoning model (incoming request identifier) |
 | `-enforce-sampling-params` | `QWEN35RP_ENFORCE_SAMPLING_PARAMS` | `false` | Enforce sampling parameters, overriding client-provided values |
 
 ### Enforce Sampling Parameters
@@ -79,7 +79,7 @@ By default, the proxy only sets sampling parameters if they are not already pres
 - **`GET /v1/models`**: Enriched (fetches backend models, validates served model, exposes 4 virtual models)
 - **`POST /v1/responses`**: Converted (Responses API → Chat Completions, with full response conversion)
 - **`POST /v1/chat/completions`**: Transformed (sampling params + thinking mode applied)
-- **`POST /v1/completions`**: Transformed (sampling params + thinking mode applied)
+- **`POST /v1/completions`**: Model name validated and swapped (no sampling params or thinking mode — raw prompt completions bypass the chat template)
 - **`POST /tokenize`**: Tokenization (prompt passthrough or messages with content/tools normalization)
 - **All other paths**: Passed through unchanged to the backend
 
