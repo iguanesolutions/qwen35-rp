@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -1024,8 +1025,14 @@ func (s *responsesStreamState) sendCompletionEvents(w http.ResponseWriter) {
 		s.seqNum++
 	}
 
-	// Send tool call completion events
-	for _, tc := range s.toolCalls {
+	// Send tool call completion events in index order
+	tcIndices := make([]int, 0, len(s.toolCalls))
+	for idx := range s.toolCalls {
+		tcIndices = append(tcIndices, idx)
+	}
+	sort.Ints(tcIndices)
+	for _, idx := range tcIndices {
+		tc := s.toolCalls[idx]
 		if tc.Started {
 			args := tc.Arguments.String()
 
@@ -1345,8 +1352,14 @@ func buildFinalResponse(responseID, itemID, reasoningItemID, model string, creat
 		output = append(output, messageItem)
 	}
 
-	// Add tool calls to output
-	for _, tc := range toolCalls {
+	// Add tool calls to output in index order
+	tcIndices := make([]int, 0, len(toolCalls))
+	for idx := range toolCalls {
+		tcIndices = append(tcIndices, idx)
+	}
+	sort.Ints(tcIndices)
+	for _, idx := range tcIndices {
+		tc := toolCalls[idx]
 		if tc.Started {
 			toolCallItem := map[string]any{
 				"id":        tc.ItemID,
