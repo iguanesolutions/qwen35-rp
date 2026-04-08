@@ -272,9 +272,27 @@ func convertResponsesToChat(reqData map[string]any, logger *slog.Logger) (map[st
 		}
 	}
 
-	// Copy tool_choice if present
+	// Convert tool_choice if present
+	// Responses API uses flat format: {"type": "function", "name": "my_func"}
+	// Chat Completions uses nested: {"type": "function", "function": {"name": "my_func"}}
 	if toolChoice, ok := reqData["tool_choice"]; ok {
-		chatData["tool_choice"] = toolChoice
+		if tcMap, ok := toolChoice.(map[string]any); ok {
+			if tcType, _ := tcMap["type"].(string); tcType == "function" {
+				if name, ok := tcMap["name"].(string); ok && tcMap["function"] == nil {
+					// Responses format → convert to Chat Completions format
+					chatData["tool_choice"] = map[string]any{
+						"type":     "function",
+						"function": map[string]any{"name": name},
+					}
+				} else {
+					chatData["tool_choice"] = toolChoice
+				}
+			} else {
+				chatData["tool_choice"] = toolChoice
+			}
+		} else {
+			chatData["tool_choice"] = toolChoice
+		}
 	}
 
 	// Copy response_format if present
