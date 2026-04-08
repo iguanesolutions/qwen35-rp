@@ -183,6 +183,10 @@ func responses(httpCli *http.Client, target *url.URL,
 				return
 			}
 
+			// Fix vLLM bug (non-thinking responses with content in reasoning_content field)
+			// before converting to Responses format
+			responseBody = fixNonStreamingResponse(responseBody, think, modelName, logger)
+
 			// Parse and convert response
 			var chatResp map[string]any
 			if err := json.Unmarshal(responseBody, &chatResp); err != nil {
