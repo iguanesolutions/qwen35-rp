@@ -321,9 +321,9 @@ func fixModelName(responseBody []byte, virtualModel string, logger *slog.Logger)
 	}
 
 	// Check if model field exists and replace it
-	if _, ok := data["model"]; ok {
+	if modelStr, ok := data["model"].(string); ok {
 		logger.Debug("fixing model name in response",
-			slog.String("original", data["model"].(string)),
+			slog.String("original", modelStr),
 			slog.String("replacement", virtualModel),
 		)
 		data["model"] = virtualModel
