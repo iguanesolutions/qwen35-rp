@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -110,6 +111,16 @@ func httpError(ctx context.Context, w http.ResponseWriter, statusCode int) {
 	if err := json.NewEncoder(w).Encode(errResp); err != nil {
 		logger.Error("failed to write error response", slog.Any("error", err))
 	}
+}
+
+// readBodyStatusCode returns the appropriate HTTP status code for a body read error.
+// Returns 413 for MaxBytesError, 500 for everything else.
+func readBodyStatusCode(err error) int {
+	var maxBytesErr *http.MaxBytesError
+	if errors.As(err, &maxBytesErr) {
+		return http.StatusRequestEntityTooLarge
+	}
+	return http.StatusInternalServerError
 }
 
 // extractSSEDataJSON extracts the JSON payload from an SSE event.

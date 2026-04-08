@@ -66,7 +66,7 @@ func transform(httpCli *http.Client, target *url.URL,
 		requestBody, err := io.ReadAll(r.Body)
 		if err != nil {
 			logger.Error("failed to read body", slog.String("error", err.Error()))
-			httpError(ctx, w, http.StatusInternalServerError)
+			httpError(ctx, w, readBodyStatusCode(err))
 			return
 		}
 		// Parse request body
