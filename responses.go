@@ -597,6 +597,7 @@ func convertChatToResponses(chatData map[string]any, virtualModel string, logger
 			"top_logprobs":         nil,
 			"truncation":           "disabled",
 			"usage":                convertUsage(map[string]any{}),
+			"output_text":          "",
 			"user":                 nil,
 			"input_messages":       nil,
 			"output_messages":      nil,
