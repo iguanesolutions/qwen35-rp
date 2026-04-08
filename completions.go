@@ -146,7 +146,7 @@ func transform(httpCli *http.Client, target *url.URL,
 			httpError(ctx, w, http.StatusInternalServerError)
 			return
 		}
-		logger.Debug("rewrited request body", slog.String("body", string(requestBody)))
+		logger.Debug("rewritten request body", slog.String("body", string(requestBody)))
 		// Track modified request
 		modifiedRequests.Add(1)
 		// prepare outgoing request

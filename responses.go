@@ -135,7 +135,7 @@ func responses(httpCli *http.Client, target *url.URL,
 			return
 		}
 
-		logger.Debug("rewrited request body", slog.String("body", string(requestBody)))
+		logger.Debug("rewritten request body", slog.String("body", string(requestBody)))
 		modifiedRequests.Add(1)
 
 		// Prepare outgoing request to /v1/chat/completions
