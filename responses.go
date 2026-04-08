@@ -364,18 +364,7 @@ func convertInputToMessages(input any, instructions any, logger *slog.Logger) []
 		// Array of input items.
 		// We need to group consecutive function_call items into a single assistant message
 		// with a tool_calls array, as Chat Completions format requires.
-		// We also buffer reasoning items and attach them to the next assistant message
-		// as reasoning_content, preserving chain-of-thought context in multi-turn.
 		var pendingToolCalls []map[string]any
-		var pendingReasoning string
-
-		// flushReasoning attaches buffered reasoning to an assistant message and clears the buffer.
-		flushReasoning := func(msg map[string]any) {
-			if pendingReasoning != "" {
-				msg["reasoning_content"] = pendingReasoning
-				pendingReasoning = ""
-			}
-		}
 
 		// flushToolCalls merges pending tool calls into the preceding assistant message
 		// if one exists, otherwise creates a new assistant message. This ensures that
@@ -395,13 +384,11 @@ func convertInputToMessages(input any, instructions any, logger *slog.Logger) []
 				}
 			}
 			// No preceding assistant message — create a new one
-			msg := map[string]any{
+			messages = append(messages, map[string]any{
 				"role":       "assistant",
 				"content":    nil,
 				"tool_calls": pendingToolCalls,
-			}
-			flushReasoning(msg)
-			messages = append(messages, msg)
+			})
 			pendingToolCalls = nil
 		}
 
@@ -415,18 +402,21 @@ func convertInputToMessages(input any, instructions any, logger *slog.Logger) []
 
 			switch itemType {
 			case "reasoning":
-				// Reasoning item from a previous thinking response.
-				// Buffer the text and attach to the next assistant message
-				// as reasoning_content for chain-of-thought continuity.
-				if contentArray, ok := itemMap["content"].([]any); ok {
-					for _, part := range contentArray {
-						if partMap, ok := part.(map[string]any); ok {
-							if text, ok := partMap["text"].(string); ok {
-								pendingReasoning += text
-							}
-						}
-					}
-				}
+				// INTENTIONALLY IGNORED — do not attach reasoning to assistant messages.
+				//
+				// Reasoning items represent chain-of-thought from previous thinking responses.
+				// While it would seem correct to convert them to reasoning_content on assistant
+				// messages (for multi-turn context), vLLM's Chat Completions endpoint STRIPS
+				// reasoning_content before applying the chat template (verified in vLLM's
+				// chat_utils.py:_parse_chat_message_content — only role, content, name,
+				// tool_call_id, and tool_calls are preserved).
+				//
+				// Attaching reasoning_content here would be dead code that creates a false
+				// impression that reasoning context is preserved in multi-turn conversations.
+				// If vLLM adds reasoning_content support in the future, this is the place
+				// to re-add it: buffer reasoning text here and attach to the next assistant
+				// message as reasoning_content.
+				logger.Debug("skipping reasoning item (vLLM strips reasoning_content from chat messages)")
 
 			case "message", "":
 				flushToolCalls()
@@ -442,15 +432,10 @@ func convertInputToMessages(input any, instructions any, logger *slog.Logger) []
 					content = convertContentPartsToChatFormat(contentArray, logger)
 				}
 
-				msg := map[string]any{
+				messages = append(messages, map[string]any{
 					"role":    role,
 					"content": content,
-				}
-				// Attach buffered reasoning to assistant messages
-				if role == "assistant" {
-					flushReasoning(msg)
-				}
-				messages = append(messages, msg)
+				})
 
 			case "function_call":
 				// Assistant tool call — accumulate into pending group

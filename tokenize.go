@@ -272,6 +272,11 @@ func normalizeChatMessages(rawMessages []any, logger *slog.Logger) []map[string]
 		if toolCalls, ok := msgMap["tool_calls"]; ok {
 			msg["tool_calls"] = toolCalls
 		}
+		// NOTE: reasoning_content is intentionally NOT preserved here.
+		// vLLM strips reasoning_content from assistant messages before applying
+		// the chat template (see chat_utils.py:_parse_chat_message_content),
+		// so including it would not affect token counts. Do not add it unless
+		// vLLM changes this behavior.
 		messages = append(messages, msg)
 	}
 	return messages
