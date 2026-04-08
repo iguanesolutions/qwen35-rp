@@ -170,15 +170,10 @@ func transform(httpCli *http.Client, target *url.URL,
 		}
 		defer outResp.Body.Close()
 
-		for header, values := range outResp.Header {
-			for _, value := range values {
-				w.Header().Add(header, value)
-			}
-		}
-
 		if stream {
-			// Streaming mode: proxy response body with model name fixing
+			// Streaming mode: copy headers and proxy response body with model name fixing
 			logger.Debug("streaming response to client with model name fix")
+			copyHeaders(w, outResp)
 			w.WriteHeader(outResp.StatusCode)
 			if err = streamResponse(w, outResp.Body, virtualModel, logger); err != nil {
 				logger.Error("failed to stream response", slog.String("error", err.Error()))
@@ -195,6 +190,7 @@ func transform(httpCli *http.Client, target *url.URL,
 			// Fix vLLM bugs and model name in a single pass
 			responseBody = fixNonStreamingResponse(responseBody, think, virtualModel, logger)
 
+			copyHeaders(w, outResp)
 			w.Header().Set("Content-Length", strconv.Itoa(len(responseBody)))
 			w.WriteHeader(outResp.StatusCode)
 			if _, err = w.Write(responseBody); err != nil {

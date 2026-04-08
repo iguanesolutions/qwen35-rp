@@ -161,15 +161,10 @@ func responses(httpCli *http.Client, target *url.URL,
 		}
 		defer outResp.Body.Close()
 
-		for header, values := range outResp.Header {
-			for _, value := range values {
-				w.Header().Add(header, value)
-			}
-		}
-
 		if stream {
-			// Streaming mode: convert Chat SSE to Responses SSE
+			// Streaming mode: copy headers and convert Chat SSE to Responses SSE
 			logger.Debug("streaming response to client with Responses format")
+			copyHeaders(w, outResp)
 			w.WriteHeader(outResp.StatusCode)
 			if err = streamResponsesConverter(w, outResp.Body, modelName, logger); err != nil {
 				logger.Error("failed to stream response", slog.String("error", err.Error()))
@@ -211,6 +206,7 @@ func responses(httpCli *http.Client, target *url.URL,
 				return
 			}
 
+			copyHeaders(w, outResp)
 			w.Header().Set("Content-Length", strconv.Itoa(len(responseBody)))
 			w.WriteHeader(outResp.StatusCode)
 			if _, err = w.Write(responseBody); err != nil {

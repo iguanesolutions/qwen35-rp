@@ -109,6 +109,15 @@ func applySamplingParams(data map[string]any, samplingParams map[string]any, log
 	}
 }
 
+// copyHeaders copies response headers from backend response to the client ResponseWriter
+func copyHeaders(w http.ResponseWriter, resp *http.Response) {
+	for header, values := range resp.Header {
+		for _, value := range values {
+			w.Header().Add(header, value)
+		}
+	}
+}
+
 // httpError writes an OpenAI-compatible JSON error response
 func httpError(ctx context.Context, w http.ResponseWriter, statusCode int) {
 	reqID := ctx.Value(httplog.ReqIDKey)
