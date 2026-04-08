@@ -292,7 +292,9 @@ func fixNonStreamingResponse(responseBody []byte, think bool, virtualModel strin
 	return fixedBody
 }
 
-// streamResponse streams SSE events from backend to client, fixing model name in all events
+// streamResponse streams SSE events from backend to client, fixing model name in all events.
+// Note: no explicit Flush() call is needed here — the httplog middleware wraps the ResponseWriter
+// and auto-flushes on every Write() when Content-Type is a streamable type (e.g. text/event-stream).
 func streamResponse(w http.ResponseWriter, backendBody io.ReadCloser, virtualModel string, logger *slog.Logger) error {
 	buf := make([]byte, 0, 4096)
 	temp := make([]byte, 4096)
