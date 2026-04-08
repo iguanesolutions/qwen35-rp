@@ -140,5 +140,7 @@ func httpError(ctx context.Context, w http.ResponseWriter, statusCode int) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(errResp)
+	if err := json.NewEncoder(w).Encode(errResp); err != nil {
+		logger.Error("failed to write error response", slog.Any("error", err))
+	}
 }
