@@ -191,11 +191,8 @@ func transform(httpCli *http.Client, target *url.URL,
 				return
 			}
 
-			// Fix vLLM bug: non-thinking, non-streaming responses incorrectly placed in reasoning_content/reasoning fields
-			responseBody = fixVLLMResponse(responseBody, think, stream, logger)
-
-			// Fix model name in response: replace backend model with virtual model name
-			responseBody = fixModelName(responseBody, virtualModel, logger)
+			// Fix vLLM bugs and model name in a single pass
+			responseBody = fixNonStreamingResponse(responseBody, think, virtualModel, logger)
 
 			w.Header().Set("Content-Length", strconv.Itoa(len(responseBody)))
 			w.WriteHeader(outResp.StatusCode)
@@ -206,139 +203,92 @@ func transform(httpCli *http.Client, target *url.URL,
 	}
 }
 
-// fixVLLMResponse fixes vLLM bug where non-thinking responses are incorrectly
-// placed in reasoning_content or reasoning fields instead of content field.
-// This only applies when think=false (no-thinking mode) AND stream=false (non-streaming).
-func fixVLLMResponse(responseBody []byte, think, stream bool, logger *slog.Logger) []byte {
-	// Only fix responses for non-thinking mode and non-streaming
-	if think || stream {
-		return responseBody
-	}
-
-	// Try to parse the response as JSON
+// fixNonStreamingResponse fixes the non-streaming response in a single JSON pass:
+//   - Replaces the backend model name with the virtual model name
+//   - When think=false, moves misplaced reasoning_content/reasoning to content (vLLM bug)
+func fixNonStreamingResponse(responseBody []byte, think bool, virtualModel string, logger *slog.Logger) []byte {
 	var data map[string]any
 	if err := json.Unmarshal(responseBody, &data); err != nil {
-		// Not valid JSON, return as-is
-		return responseBody
-	}
-
-	// Check if this is a chat completion response (has choices array)
-	choices, ok := data["choices"].([]any)
-	if !ok || len(choices) == 0 {
 		return responseBody
 	}
 
 	modified := false
-	for i, choice := range choices {
-		choiceMap, ok := choice.(map[string]any)
-		if !ok {
-			continue
-		}
 
-		// Check if this is a delta (streaming) or message (non-streaming)
-		var message map[string]any
-		var isDelta bool
-
-		if msg, ok := choiceMap["message"].(map[string]any); ok {
-			message = msg
-			isDelta = false
-		} else if delta, ok := choiceMap["delta"].(map[string]any); ok {
-			message = delta
-			isDelta = true
-		} else {
-			continue
-		}
-
-		// Check if content is empty/missing and reasoning_content or reasoning exists
-		// Handle content as string or null
-		var content string
-		var hasContent bool
-		if contentVal, exists := message["content"]; exists {
-			if contentStr, ok := contentVal.(string); ok {
-				content = contentStr
-				hasContent = true
-			}
-		}
-		reasoningContent, hasReasoningContent := message["reasoning_content"].(string)
-		reasoning, hasReasoning := message["reasoning"].(string)
-
-		// Fix: if content is empty/missing but reasoning_content or reasoning has value, move it to content
-		if (!hasContent || content == "") && (hasReasoningContent || hasReasoning) {
-			var reasoningText string
-			var reasoningSource string
-			if hasReasoningContent && reasoningContent != "" {
-				reasoningText = reasoningContent
-				reasoningSource = "reasoning_content"
-			} else if hasReasoning && reasoning != "" {
-				reasoningText = reasoning
-				reasoningSource = "reasoning"
-			}
-
-			if reasoningText != "" {
-				message["content"] = reasoningText
-				// Remove the incorrect fields
-				delete(message, "reasoning_content")
-				delete(message, "reasoning")
-				modified = true
-				logger.Info("vLLM response fixed: moved reasoning content to content field (no-thinking, non-streaming mode)",
-					slog.String("source_field", reasoningSource),
-					slog.Int("choice_index", i),
-				)
-			}
-		}
-
-		// Update the choice in the array
-		if isDelta {
-			choiceMap["delta"] = message
-		} else {
-			choiceMap["message"] = message
-		}
-		choices[i] = choiceMap
-	}
-
-	if modified {
-		data["choices"] = choices
-		// Re-marshal the response
-		fixedBody, err := json.Marshal(data)
-		if err != nil {
-			logger.Error("failed to marshal fixed response body", slog.Any("error", err))
-			return responseBody
-		}
-		logger.Debug("response body re-marshaled after fix")
-		return fixedBody
-	}
-
-	return responseBody
-}
-
-// fixModelName replaces the backend model name with the virtual model name
-// that the client originally requested
-func fixModelName(responseBody []byte, virtualModel string, logger *slog.Logger) []byte {
-	// Try to parse the response as JSON
-	var data map[string]any
-	if err := json.Unmarshal(responseBody, &data); err != nil {
-		// Not valid JSON, return as-is
-		return responseBody
-	}
-
-	// Check if model field exists and replace it
+	// Fix model name
 	if modelStr, ok := data["model"].(string); ok {
 		logger.Debug("fixing model name in response",
 			slog.String("original", modelStr),
 			slog.String("replacement", virtualModel),
 		)
 		data["model"] = virtualModel
-
-		// Re-marshal the response
-		fixedBody, err := json.Marshal(data)
-		if err != nil {
-			logger.Error("failed to marshal response with fixed model name", slog.Any("error", err))
-			return responseBody
-		}
-		return fixedBody
+		modified = true
 	}
 
-	return responseBody
+	// Fix vLLM bug: non-thinking responses incorrectly placed in reasoning_content/reasoning
+	if !think {
+		choices, ok := data["choices"].([]any)
+		if ok {
+			for i, choice := range choices {
+				choiceMap, ok := choice.(map[string]any)
+				if !ok {
+					continue
+				}
+
+				message, ok := choiceMap["message"].(map[string]any)
+				if !ok {
+					continue
+				}
+
+				// Check if content is empty/missing and reasoning_content or reasoning exists
+				var content string
+				var hasContent bool
+				if contentVal, exists := message["content"]; exists {
+					if contentStr, ok := contentVal.(string); ok {
+						content = contentStr
+						hasContent = true
+					}
+				}
+				reasoningContent, hasReasoningContent := message["reasoning_content"].(string)
+				reasoning, hasReasoning := message["reasoning"].(string)
+
+				if (!hasContent || content == "") && (hasReasoningContent || hasReasoning) {
+					var reasoningText string
+					var reasoningSource string
+					if hasReasoningContent && reasoningContent != "" {
+						reasoningText = reasoningContent
+						reasoningSource = "reasoning_content"
+					} else if hasReasoning && reasoning != "" {
+						reasoningText = reasoning
+						reasoningSource = "reasoning"
+					}
+
+					if reasoningText != "" {
+						message["content"] = reasoningText
+						delete(message, "reasoning_content")
+						delete(message, "reasoning")
+						choiceMap["message"] = message
+						choices[i] = choiceMap
+						modified = true
+						logger.Info("vLLM response fixed: moved reasoning content to content field",
+							slog.String("source_field", reasoningSource),
+							slog.Int("choice_index", i),
+						)
+					}
+				}
+			}
+		}
+	}
+
+	if !modified {
+		return responseBody
+	}
+
+	fixedBody, err := json.Marshal(data)
+	if err != nil {
+		logger.Error("failed to marshal fixed response body", slog.Any("error", err))
+		return responseBody
+	}
+	return fixedBody
 }
 
 // streamResponse streams SSE events from backend to client, fixing model name in all events
