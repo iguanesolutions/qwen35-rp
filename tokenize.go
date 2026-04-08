@@ -143,11 +143,7 @@ func tokenize(httpCli *http.Client, target *url.URL,
 			}
 			defer outResp.Body.Close()
 			// Copy response headers and body
-			for header, values := range outResp.Header {
-				for _, value := range values {
-					w.Header().Add(header, value)
-				}
-			}
+			copyHeaders(w, outResp)
 			w.WriteHeader(outResp.StatusCode)
 			if _, err = io.Copy(w, outResp.Body); err != nil {
 				logger.Error("failed to write response", slog.String("error", err.Error()))
@@ -213,11 +209,7 @@ func tokenize(httpCli *http.Client, target *url.URL,
 		defer outResp.Body.Close()
 
 		// Copy response headers and body
-		for header, values := range outResp.Header {
-			for _, value := range values {
-				w.Header().Add(header, value)
-			}
-		}
+		copyHeaders(w, outResp)
 		w.WriteHeader(outResp.StatusCode)
 		if _, err = io.Copy(w, outResp.Body); err != nil {
 			logger.Error("failed to write response", slog.String("error", err.Error()))
