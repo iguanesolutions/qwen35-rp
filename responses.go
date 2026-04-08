@@ -1522,6 +1522,7 @@ func buildInitialResponse(responseID, model string, createdAt int64, status stri
 			"output_tokens": 0,
 			"total_tokens":  0,
 		},
+		"output_text":     "",
 		"user":            nil,
 		"input_messages":  nil,
 		"output_messages": nil,
