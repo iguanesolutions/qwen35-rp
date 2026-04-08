@@ -324,6 +324,11 @@ func convertResponsesToChat(reqData map[string]any, logger *slog.Logger) (map[st
 		chatData["response_format"] = respFormat
 	}
 
+	// Copy user identifier for end-user tracking
+	if user, ok := reqData["user"]; ok {
+		chatData["user"] = user
+	}
+
 	// Copy stream flag and add stream_options for usage tracking
 	if stream, ok := reqData["stream"]; ok {
 		chatData["stream"] = stream
