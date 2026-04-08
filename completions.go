@@ -358,30 +358,34 @@ func streamResponse(w http.ResponseWriter, backendBody io.ReadCloser, virtualMod
 	}
 }
 
-// fixModelNameInSSE fixes the model field in an SSE data event
+// fixModelNameInSSE fixes the model field in an SSE event while preserving
+// all SSE fields (id:, event:, retry:, etc.). Only the data: line containing
+// JSON with a model field is modified.
 func fixModelNameInSSE(event []byte, virtualModel string, logger *slog.Logger) []byte {
-	// Extract JSON part (after "data: ")
-	if !bytes.HasPrefix(event, []byte("data: ")) {
-		return event
-	}
+	// Split event into lines, preserving structure
+	// Event includes trailing \n\n — trim it for processing, re-add at end
+	trimmed := bytes.TrimRight(event, "\n")
+	lines := bytes.Split(trimmed, []byte("\n"))
 
-	jsonPart := event[6:] // Skip "data: "
-	jsonPart = bytes.TrimSpace(jsonPart)
+	modified := false
+	for i, line := range lines {
+		if !bytes.HasPrefix(line, []byte("data: ")) {
+			continue
+		}
 
-	// Skip [DONE] or empty events
-	if len(jsonPart) == 0 || bytes.Equal(jsonPart, []byte("[DONE]")) {
-		return event
-	}
+		jsonPart := bytes.TrimSpace(line[6:])
 
-	// Try to parse and fix
-	var data map[string]any
-	if err := json.Unmarshal(jsonPart, &data); err != nil {
-		// Not valid JSON, return original
-		return event
-	}
+		// Skip [DONE] or empty data lines
+		if len(jsonPart) == 0 || bytes.Equal(jsonPart, []byte("[DONE]")) {
+			continue
+		}
 
-	// Fix model field if present
-	if _, ok := data["model"]; ok {
+		// Try to parse and fix
+		var data map[string]any
+		if err := json.Unmarshal(jsonPart, &data); err != nil {
+			continue
+		}
+
 		if modelStr, ok := data["model"].(string); ok {
 			logger.Debug("fixing model name in streaming event",
 				slog.String("original", modelStr),
@@ -389,17 +393,23 @@ func fixModelNameInSSE(event []byte, virtualModel string, logger *slog.Logger) [
 			)
 			data["model"] = virtualModel
 
-			// Re-marshal
 			fixedJSON, err := json.Marshal(data)
 			if err != nil {
 				logger.Error("failed to marshal streaming event", slog.Any("error", err))
-				return event
+				continue
 			}
 
-			// Reconstruct SSE event
-			return append([]byte("data: "), append(fixedJSON, []byte("\n\n")...)...)
+			lines[i] = append([]byte("data: "), fixedJSON...)
+			modified = true
 		}
 	}
 
-	return event
+	if !modified {
+		return event
+	}
+
+	// Reassemble event with original \n\n terminator
+	result := bytes.Join(lines, []byte("\n"))
+	result = append(result, []byte("\n\n")...)
+	return result
 }
