@@ -863,6 +863,7 @@ type responsesStreamState struct {
 	seqNum                int
 	lastUsage             map[string]any
 	messageStarted        bool
+	contentPartStarted    bool
 	finishReason          string
 	toolCalls             map[int]*toolCallState
 	logger                *slog.Logger
@@ -1091,55 +1092,64 @@ func (s *responsesStreamState) sendCompletionEvents(w http.ResponseWriter) error
 
 	// Send message completion events if we started a message
 	if s.messageStarted {
-		// response.output_text.done
-		if err := sendSSEEvent(w, map[string]any{
-			"type":            "response.output_text.done",
-			"item_id":         s.itemID,
-			"output_index":    s.messageOutputIndex,
-			"content_index":   0,
-			"text":            text,
-			"sequence_number": s.seqNum,
-		}, s.logger); err != nil {
-			return err
-		}
-		s.seqNum++
+		// Only emit text/content-part done events if we actually had text content
+		if s.contentPartStarted {
+			// response.output_text.done
+			if err := sendSSEEvent(w, map[string]any{
+				"type":            "response.output_text.done",
+				"item_id":         s.itemID,
+				"output_index":    s.messageOutputIndex,
+				"content_index":   0,
+				"text":            text,
+				"sequence_number": s.seqNum,
+			}, s.logger); err != nil {
+				return err
+			}
+			s.seqNum++
 
-		// response.content_part.done
-		if err := sendSSEEvent(w, map[string]any{
-			"type":          "response.content_part.done",
-			"item_id":       s.itemID,
-			"output_index":  s.messageOutputIndex,
-			"content_index": 0,
-			"part": map[string]any{
-				"type":        "output_text",
-				"text":        text,
-				"annotations": []any{},
-				"logprobs":    nil,
-			},
-			"sequence_number": s.seqNum,
-		}, s.logger); err != nil {
-			return err
+			// response.content_part.done
+			if err := sendSSEEvent(w, map[string]any{
+				"type":          "response.content_part.done",
+				"item_id":       s.itemID,
+				"output_index":  s.messageOutputIndex,
+				"content_index": 0,
+				"part": map[string]any{
+					"type":        "output_text",
+					"text":        text,
+					"annotations": []any{},
+					"logprobs":    nil,
+				},
+				"sequence_number": s.seqNum,
+			}, s.logger); err != nil {
+				return err
+			}
+			s.seqNum++
 		}
-		s.seqNum++
 
 		// response.output_item.done for message
+		var messageContent []any
+		if s.contentPartStarted {
+			messageContent = []any{
+				map[string]any{
+					"type":        "output_text",
+					"text":        text,
+					"annotations": []any{},
+					"logprobs":    nil,
+				},
+			}
+		} else {
+			messageContent = []any{}
+		}
 		if err := sendSSEEvent(w, map[string]any{
 			"type":         "response.output_item.done",
 			"output_index": s.messageOutputIndex,
 			"item": map[string]any{
-				"id":   s.itemID,
-				"type": "message",
-				"role": "assistant",
-				"content": []any{
-					map[string]any{
-						"type":        "output_text",
-						"text":        text,
-						"annotations": []any{},
-						"logprobs":    nil,
-					},
-				},
-				"status": "completed",
-				"phase":  nil,
+				"id":      s.itemID,
+				"type":    "message",
+				"role":    "assistant",
+				"content": messageContent,
+				"status":  "completed",
+				"phase":   nil,
 			},
 			"sequence_number": s.seqNum,
 		}, s.logger); err != nil {
@@ -1215,18 +1225,6 @@ func (s *responsesStreamState) startMessage() []map[string]any {
 			"content": []any{},
 			"phase":   nil,
 		},
-	})
-	s.seqNum++
-
-	events = append(events, map[string]any{
-		"type":          "response.content_part.added",
-		"item_id":       s.itemID,
-		"output_index":  s.messageOutputIndex,
-		"content_index": 0,
-		"part": map[string]any{
-			"type": "output_text",
-		},
-		"sequence_number": s.seqNum,
 	})
 	s.seqNum++
 
@@ -1311,6 +1309,22 @@ func (s *responsesStreamState) convertChatSSEEventToResponses(chatEvent map[stri
 	if content, ok := delta["content"].(string); ok && content != "" {
 		if !s.messageStarted {
 			events = append(events, s.startMessage()...)
+		}
+
+		// Emit content_part.added on first text delta
+		if !s.contentPartStarted {
+			s.contentPartStarted = true
+			events = append(events, map[string]any{
+				"type":          "response.content_part.added",
+				"item_id":       s.itemID,
+				"output_index":  s.messageOutputIndex,
+				"content_index": 0,
+				"part": map[string]any{
+					"type": "output_text",
+				},
+				"sequence_number": s.seqNum,
+			})
+			s.seqNum++
 		}
 
 		// Accumulate text
@@ -1478,7 +1492,7 @@ func buildFinalResponse(responseID, itemID, reasoningItemID, model string, creat
 	// Build message item (always present when a message was started during streaming,
 	// even for tool-call-only responses where text is empty)
 	if messageStarted {
-		var contentParts []any
+		contentParts := []any{}
 		if text != "" {
 			contentParts = []any{
 				map[string]any{
