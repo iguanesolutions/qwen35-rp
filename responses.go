@@ -590,7 +590,8 @@ func convertChatToResponses(chatData map[string]any, virtualModel string, logger
 			})
 		}
 
-		// Check for tool calls - add as separate items AFTER message
+		// Collect tool calls to append AFTER the message item
+		var pendingToolCalls []map[string]any
 		if toolCalls, ok := message["tool_calls"].([]any); ok {
 			for _, tc := range toolCalls {
 				tcMap, ok := tc.(map[string]any)
@@ -610,22 +611,24 @@ func convertChatToResponses(chatData map[string]any, virtualModel string, logger
 					callID = fmt.Sprintf("call_%s", generateSimpleID())
 				}
 
-				toolCallItem := map[string]any{
+				pendingToolCalls = append(pendingToolCalls, map[string]any{
 					"id":        fmt.Sprintf("fc_%s", generateSimpleID()),
 					"type":      "function_call",
 					"call_id":   callID,
 					"name":      name,
 					"arguments": args,
 					"status":    "completed",
-				}
-				outputItems = append(outputItems, toolCallItem)
+				})
 			}
 		}
 
-		// Add content parts if not empty
+		// Add message first, then tool calls (matching OpenAI output order)
 		if len(contentParts) > 0 {
 			outputItem["content"] = contentParts
 			outputItems = append(outputItems, outputItem)
+		}
+		for _, tcItem := range pendingToolCalls {
+			outputItems = append(outputItems, tcItem)
 		}
 	}
 
