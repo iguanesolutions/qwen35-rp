@@ -1280,7 +1280,7 @@ func (s *responsesStreamState) convertChatSSEEventToResponses(chatEvent map[stri
 			events = append(events, map[string]any{
 				"type":          "response.reasoning_part.added",
 				"item_id":       s.reasoningItemID,
-				"output_index":  s.outputIndex - 1,
+				"output_index":  s.reasoningOutputIndex,
 				"content_index": 0,
 				"part": map[string]any{
 					"type": "reasoning_text",
@@ -1299,7 +1299,7 @@ func (s *responsesStreamState) convertChatSSEEventToResponses(chatEvent map[stri
 		events = append(events, map[string]any{
 			"type":            "response.reasoning_text.delta",
 			"item_id":         s.reasoningItemID,
-			"output_index":    s.outputIndex - 1,
+			"output_index":    s.reasoningOutputIndex,
 			"content_index":   0,
 			"delta":           reasoning,
 			"sequence_number": s.seqNum,
