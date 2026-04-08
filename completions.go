@@ -490,8 +490,9 @@ func streamResponse(w http.ResponseWriter, backendBody io.ReadCloser, virtualMod
 		}
 
 		if err == io.EOF {
-			// Write any remaining partial data as-is
+			// Attempt to fix model name in any remaining data before writing
 			if len(buf) > 0 {
+				buf = fixModelNameInSSE(buf, virtualModel, logger)
 				if _, werr := w.Write(buf); werr != nil {
 					return werr
 				}
