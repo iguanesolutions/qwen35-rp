@@ -38,7 +38,7 @@ func tokenize(httpCli *http.Client, target *url.URL,
 			return
 		}
 
-		// Parse request body into typed struct
+		// First, try to parse as Chat Completions format (most common case)
 		var req TokenizeMessagesRequest
 		err = json.Unmarshal(requestBody, &req)
 		if err != nil {
@@ -47,7 +47,87 @@ func tokenize(httpCli *http.Client, target *url.URL,
 			return
 		}
 
-		// Validate messages is present
+		// If messages is empty, check if this might be Responses API format with "input" field
+		// or simple prompt tokenization with "prompt" field
+		if len(req.Messages) == 0 {
+			// Try parsing as generic map to check for "input" or "prompt" fields
+			var reqData map[string]any
+			err = json.Unmarshal(requestBody, &reqData)
+			if err != nil {
+				logger.Error("failed to parse body as JSON", slog.String("error", err.Error()))
+				httpError(ctx, w, http.StatusBadRequest)
+				return
+			}
+
+			if inputData, ok := reqData["input"]; ok {
+				// Responses API format - convert to messages
+				logger.Info("detected Responses API format in tokenize request")
+				var messages []any
+				if inputArray, ok := inputData.([]any); ok {
+					messages = inputArray
+				}
+				// Convert from Responses to Chat Completions format
+				if len(messages) > 0 {
+					convertedMessages, err := convertMessagesToChatFormat(messages, reqData, logger)
+					if err != nil {
+						logger.Error("failed to convert messages", slog.Any("error", err))
+						httpError(ctx, w, http.StatusBadRequest)
+						return
+					}
+					req.Messages = convertedMessages
+
+					// Also extract tools if present in Responses format
+					if toolsData, ok := reqData["tools"].([]any); ok && len(toolsData) > 0 {
+						chatTools := make([]map[string]any, 0, len(toolsData))
+						for _, tool := range toolsData {
+							toolMap, ok := tool.(map[string]any)
+							if !ok {
+								continue
+							}
+							toolType, _ := toolMap["type"].(string)
+							if toolType == "function" {
+								funcDef := map[string]any{}
+								if name, ok := toolMap["name"].(string); ok {
+									funcDef["name"] = name
+								}
+								if desc, ok := toolMap["description"].(string); ok {
+									funcDef["description"] = desc
+								}
+								if params, ok := toolMap["parameters"]; ok {
+									funcDef["parameters"] = params
+								}
+								if strict, ok := toolMap["strict"]; ok {
+									funcDef["strict"] = strict
+								}
+								chatTools = append(chatTools, map[string]any{
+									"type":     "function",
+									"function": funcDef,
+								})
+							}
+						}
+						if len(chatTools) > 0 {
+							toolsAsAny := make([]any, len(chatTools))
+							for i, t := range chatTools {
+								toolsAsAny[i] = t
+							}
+							req.Tools = toolsAsAny
+						}
+					}
+				}
+			} else if promptData, ok := reqData["prompt"].(string); ok {
+				// Simple prompt tokenization (vLLM native format)
+				logger.Info("detected prompt tokenization request")
+				// Convert prompt to a single user message
+				req.Messages = []any{
+					map[string]any{
+						"role":    "user",
+						"content": promptData,
+					},
+				}
+			}
+		}
+
+		// Validate messages is present (after checking both formats)
 		if len(req.Messages) == 0 {
 			logger.Error("missing messages in request body")
 			httpError(ctx, w, http.StatusBadRequest)
@@ -55,6 +135,7 @@ func tokenize(httpCli *http.Client, target *url.URL,
 		}
 
 		// Check if messages need conversion from Responses to Chat Completions format
+		// (for cases where messages field exists but contains Responses-format messages)
 		messages := req.Messages
 		needsConversion := false
 		if len(messages) > 0 {
@@ -62,7 +143,6 @@ func tokenize(httpCli *http.Client, target *url.URL,
 		}
 		if needsConversion {
 			logger.Info("converting messages from Responses to Chat Completions format")
-			// Convert messages using the same logic as responses.go
 			convertedMessages, err := convertMessagesToChatFormat(messages, map[string]any{"instructions": ""}, logger)
 			if err != nil {
 				logger.Error("failed to convert messages", slog.Any("error", err))
