@@ -324,11 +324,24 @@ func convertInputToMessages(input any, instructions any, logger *slog.Logger) []
 		// with a tool_calls array, as Chat Completions format requires.
 		var pendingToolCalls []map[string]any
 
-		// flushToolCalls appends a single assistant message containing all pending tool calls
+		// flushToolCalls merges pending tool calls into the preceding assistant message
+		// if one exists, otherwise creates a new assistant message. This ensures that
+		// an assistant turn with both text and tool calls produces a single message
+		// with both content and tool_calls, as Chat Completions format requires.
 		flushToolCalls := func() {
 			if len(pendingToolCalls) == 0 {
 				return
 			}
+			// Merge into preceding assistant message if possible
+			if n := len(messages); n > 0 {
+				last := messages[n-1]
+				if role, _ := last["role"].(string); role == "assistant" {
+					last["tool_calls"] = pendingToolCalls
+					pendingToolCalls = nil
+					return
+				}
+			}
+			// No preceding assistant message — create a new one
 			messages = append(messages, map[string]any{
 				"role":       "assistant",
 				"content":    nil,
