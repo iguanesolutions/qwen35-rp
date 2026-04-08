@@ -161,13 +161,23 @@ func responses(httpCli *http.Client, target *url.URL,
 		}
 		defer outResp.Body.Close()
 
-		if stream {
+		if stream && outResp.StatusCode >= 200 && outResp.StatusCode < 300 {
 			// Streaming mode: copy headers and convert Chat SSE to Responses SSE
 			logger.Debug("streaming response to client with Responses format")
 			copyHeaders(w, outResp)
 			w.WriteHeader(outResp.StatusCode)
 			if err = streamResponsesConverter(w, outResp.Body, modelName, logger); err != nil {
 				logger.Error("failed to stream response", slog.String("error", err.Error()))
+			}
+		} else if stream {
+			// Backend returned an error for a streaming request: pass through the raw error body
+			logger.Warn("backend returned error for streaming request, passing through raw response",
+				slog.Int("status", outResp.StatusCode),
+			)
+			copyHeaders(w, outResp)
+			w.WriteHeader(outResp.StatusCode)
+			if _, err = io.Copy(w, outResp.Body); err != nil {
+				logger.Error("failed to write error response", slog.String("error", err.Error()))
 			}
 		} else {
 			// Non-streaming mode: read full response and convert
