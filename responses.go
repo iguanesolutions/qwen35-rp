@@ -188,6 +188,20 @@ func responses(httpCli *http.Client, target *url.URL,
 				return
 			}
 
+			// Only attempt conversion on success responses; pass through errors as-is
+			if outResp.StatusCode < 200 || outResp.StatusCode >= 300 {
+				logger.Warn("backend returned error for non-streaming request, passing through raw response",
+					slog.Int("status", outResp.StatusCode),
+				)
+				copyHeaders(w, outResp)
+				w.Header().Set("Content-Length", strconv.Itoa(len(responseBody)))
+				w.WriteHeader(outResp.StatusCode)
+				if _, err = w.Write(responseBody); err != nil {
+					logger.Error("failed to write error response", slog.String("error", err.Error()))
+				}
+				return
+			}
+
 			// Fix vLLM bug (non-thinking responses with content in reasoning_content field)
 			// before converting to Responses format
 			responseBody = fixNonStreamingResponse(responseBody, think, modelName, logger)
