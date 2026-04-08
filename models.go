@@ -119,6 +119,7 @@ func models(httpCli *http.Client, target *url.URL, servedModel, thinkingGeneral,
 
 		// Write response
 		copyHeaders(w, resp)
+		w.Header().Del("Content-Length")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.StatusCode)
 		if _, err = w.Write(enrichedBody); err != nil {
