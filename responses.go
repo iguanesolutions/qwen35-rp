@@ -364,7 +364,18 @@ func convertInputToMessages(input any, instructions any, logger *slog.Logger) []
 		// Array of input items.
 		// We need to group consecutive function_call items into a single assistant message
 		// with a tool_calls array, as Chat Completions format requires.
+		// We also buffer reasoning items and attach them to the next assistant message
+		// as reasoning_content, preserving chain-of-thought context in multi-turn.
 		var pendingToolCalls []map[string]any
+		var pendingReasoning string
+
+		// flushReasoning attaches buffered reasoning to an assistant message and clears the buffer.
+		flushReasoning := func(msg map[string]any) {
+			if pendingReasoning != "" {
+				msg["reasoning_content"] = pendingReasoning
+				pendingReasoning = ""
+			}
+		}
 
 		// flushToolCalls merges pending tool calls into the preceding assistant message
 		// if one exists, otherwise creates a new assistant message. This ensures that
@@ -384,11 +395,13 @@ func convertInputToMessages(input any, instructions any, logger *slog.Logger) []
 				}
 			}
 			// No preceding assistant message — create a new one
-			messages = append(messages, map[string]any{
+			msg := map[string]any{
 				"role":       "assistant",
 				"content":    nil,
 				"tool_calls": pendingToolCalls,
-			})
+			}
+			flushReasoning(msg)
+			messages = append(messages, msg)
 			pendingToolCalls = nil
 		}
 
@@ -401,6 +414,20 @@ func convertInputToMessages(input any, instructions any, logger *slog.Logger) []
 			itemType, _ := itemMap["type"].(string)
 
 			switch itemType {
+			case "reasoning":
+				// Reasoning item from a previous thinking response.
+				// Buffer the text and attach to the next assistant message
+				// as reasoning_content for chain-of-thought continuity.
+				if contentArray, ok := itemMap["content"].([]any); ok {
+					for _, part := range contentArray {
+						if partMap, ok := part.(map[string]any); ok {
+							if text, ok := partMap["text"].(string); ok {
+								pendingReasoning += text
+							}
+						}
+					}
+				}
+
 			case "message", "":
 				flushToolCalls()
 				// Regular message
@@ -415,10 +442,15 @@ func convertInputToMessages(input any, instructions any, logger *slog.Logger) []
 					content = convertContentPartsToChatFormat(contentArray, logger)
 				}
 
-				messages = append(messages, map[string]any{
+				msg := map[string]any{
 					"role":    role,
 					"content": content,
-				})
+				}
+				// Attach buffered reasoning to assistant messages
+				if role == "assistant" {
+					flushReasoning(msg)
+				}
+				messages = append(messages, msg)
 
 			case "function_call":
 				// Assistant tool call — accumulate into pending group
