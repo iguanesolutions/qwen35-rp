@@ -61,10 +61,7 @@ func main() {
 	httpClient := cleanhttp.DefaultPooledClient()
 	// Explicit handlers for POST paths that need transformation
 	http.HandleFunc("POST /tokenize", httplogger.LogFunc(
-		tokenize(httpClient, backendURL,
-			cfg.ServedModelName, cfg.ThinkingGeneralModel, cfg.ThinkingCodingModel,
-			cfg.InstructGeneralModel, cfg.InstructReasoningModel,
-		),
+		tokenize(httpClient, backendURL, cfg.ServedModelName),
 	))
 	http.HandleFunc("POST /v1/responses", httplogger.LogFunc(
 		responses(httpClient, backendURL,

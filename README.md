@@ -126,12 +126,13 @@ For full functionality, the vLLM backend should be started with the following fl
 
 ## Tokenize API
 
-The proxy provides a `/tokenize` endpoint that forwards tokenization requests to the backend. When a request is sent in Responses API format (using the `messages` field with Responses-style message objects), the proxy applies the same format conversion as the `/v1/responses` endpoint:
+The proxy provides a `/tokenize` endpoint that forwards tokenization requests to the backend. It accepts three input formats and normalizes them to Chat Completions format before forwarding to vLLM:
 
-- **Message conversion**: Responses API format → Chat Completions format
-- **Tool conversion**: Responses tool format → Chat Completions tool format
+- **Chat Completions**: `{"messages": [...], "tools": [...]}` — passed through with content part normalization
+- **Responses API**: `{"input": "..." or [...], "instructions": "...", "tools": [...]}` — converted using the same logic as `/v1/responses`
+- **vLLM prompt**: `{"prompt": "..."}` — wrapped as a single user message
 
-This ensures consistency: clients using the Responses API for generation requests can use the same format for tokenization, without needing to know the backend's expected format. The endpoint also supports multimodal inputs (images, etc.) in either format.
+This ensures consistency: clients using any format for generation requests can use the same format for tokenization, without needing to know the backend's expected format. The endpoint also supports multimodal inputs (images, etc.) in either format.
 
 ## Health Check
 

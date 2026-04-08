@@ -11,22 +11,15 @@ import (
 	"github.com/hekmon/httplog/v3"
 )
 
-// TokenizeMessagesRequest represents the request body for /tokenize endpoint
-type TokenizeMessagesRequest struct {
-	Messages            []any          `json:"messages"`
-	AddGenerationPrompt bool           `json:"add_generation_prompt,omitempty"`
-	ReturnTokenStrings  bool           `json:"return_token_strs,omitempty"`
-	ChatTemplateKwargs  map[string]any `json:"chat_template_kwargs,omitempty"`
-	Tools               []any          `json:"tools,omitempty"`
-}
-
 // tokenize handles the /tokenize endpoint by intercepting requests and converting
-// Responses API format messages to Chat Completions format if needed before forwarding to vLLM
-func tokenize(httpCli *http.Client, target *url.URL,
-	servedModel, thinkingGeneral, thinkingCoding, instructGeneral, instructReasoning string) http.HandlerFunc {
-
+// Responses API format messages to Chat Completions format if needed before forwarding to vLLM.
+//
+// Accepted input formats:
+//   - Chat Completions: {"messages": [...], "tools": [...]}
+//   - Responses API:    {"input": "..." or [...], "instructions": "...", "tools": [...]}
+//   - vLLM prompt:      {"prompt": "..."}
+func tokenize(httpCli *http.Client, target *url.URL, servedModel string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Prepare
 		logger := logger.With(httplog.GetReqIDSLogAttr(r.Context()))
 		ctx := r.Context()
 
@@ -38,178 +31,96 @@ func tokenize(httpCli *http.Client, target *url.URL,
 			return
 		}
 
-		// First, try to parse as Chat Completions format (most common case)
-		var req TokenizeMessagesRequest
-		err = json.Unmarshal(requestBody, &req)
-		if err != nil {
+		// Parse as generic map to detect format
+		var reqData map[string]any
+		if err := json.Unmarshal(requestBody, &reqData); err != nil {
 			logger.Error("failed to parse body as JSON", slog.String("error", err.Error()))
 			httpError(ctx, w, http.StatusBadRequest)
 			return
 		}
 
-		// If messages is empty, check if this might be Responses API format with "input" field
-		// or simple prompt tokenization with "prompt" field
-		if len(req.Messages) == 0 {
-			// Try parsing as generic map to check for "input" or "prompt" fields
-			var reqData map[string]any
-			err = json.Unmarshal(requestBody, &reqData)
-			if err != nil {
-				logger.Error("failed to parse body as JSON", slog.String("error", err.Error()))
+		// Determine the messages and tools in Chat Completions format.
+		// Exactly one conversion path is taken depending on which fields are present.
+		var (
+			messages []map[string]any
+			tools    []map[string]any
+			modified bool
+		)
+
+		switch {
+		case reqData["messages"] != nil:
+			// Chat Completions format: messages are already in the right shape.
+			// We still normalize content parts (e.g. input_text → text) for safety.
+			logger.Debug("detected Chat Completions format in tokenize request")
+			rawMessages, ok := reqData["messages"].([]any)
+			if !ok || len(rawMessages) == 0 {
+				logger.Error("messages field is not a valid array")
 				httpError(ctx, w, http.StatusBadRequest)
 				return
 			}
-
-			if inputData, ok := reqData["input"]; ok {
-				// Responses API format - convert to messages
-				logger.Info("detected Responses API format in tokenize request")
-				var messages []any
-				if inputArray, ok := inputData.([]any); ok {
-					messages = inputArray
-				}
-				// Convert from Responses to Chat Completions format
-				if len(messages) > 0 {
-					convertedMessages, err := convertMessagesToChatFormat(messages, reqData, logger)
-					if err != nil {
-						logger.Error("failed to convert messages", slog.Any("error", err))
-						httpError(ctx, w, http.StatusBadRequest)
-						return
-					}
-					req.Messages = convertedMessages
-
-					// Also extract tools if present in Responses format
-					if toolsData, ok := reqData["tools"].([]any); ok && len(toolsData) > 0 {
-						chatTools := make([]map[string]any, 0, len(toolsData))
-						for _, tool := range toolsData {
-							toolMap, ok := tool.(map[string]any)
-							if !ok {
-								continue
-							}
-							toolType, _ := toolMap["type"].(string)
-							if toolType == "function" {
-								funcDef := map[string]any{}
-								if name, ok := toolMap["name"].(string); ok {
-									funcDef["name"] = name
-								}
-								if desc, ok := toolMap["description"].(string); ok {
-									funcDef["description"] = desc
-								}
-								if params, ok := toolMap["parameters"]; ok {
-									funcDef["parameters"] = params
-								}
-								if strict, ok := toolMap["strict"]; ok {
-									funcDef["strict"] = strict
-								}
-								chatTools = append(chatTools, map[string]any{
-									"type":     "function",
-									"function": funcDef,
-								})
-							}
-						}
-						if len(chatTools) > 0 {
-							toolsAsAny := make([]any, len(chatTools))
-							for i, t := range chatTools {
-								toolsAsAny[i] = t
-							}
-							req.Tools = toolsAsAny
-						}
-					}
-				}
-			} else if promptData, ok := reqData["prompt"].(string); ok {
-				// Simple prompt tokenization (vLLM native format)
-				logger.Info("detected prompt tokenization request")
-				// Convert prompt to a single user message
-				req.Messages = []any{
-					map[string]any{
-						"role":    "user",
-						"content": promptData,
-					},
-				}
+			messages = normalizeChatMessages(rawMessages, logger)
+			// Tools are already in Chat Completions format, pass through as-is
+			if rawTools, ok := reqData["tools"].([]any); ok && len(rawTools) > 0 {
+				tools = passThroughTools(rawTools)
 			}
-		}
 
-		// Validate messages is present (after checking both formats)
-		if len(req.Messages) == 0 {
-			logger.Error("missing messages in request body")
+		case reqData["input"] != nil:
+			// Responses API format: convert input → messages, tools → chat tools
+			logger.Info("detected Responses API format in tokenize request")
+			messages, err = convertInputToMessages(reqData["input"], reqData["instructions"], logger)
+			if err != nil {
+				logger.Error("failed to convert Responses input to messages", slog.Any("error", err))
+				httpError(ctx, w, http.StatusBadRequest)
+				return
+			}
+			if rawTools, ok := reqData["tools"].([]any); ok && len(rawTools) > 0 {
+				tools = convertToolsToChat(rawTools)
+			}
+			modified = true
+
+		case reqData["prompt"] != nil:
+			// vLLM native prompt format: wrap in a single user message
+			promptStr, ok := reqData["prompt"].(string)
+			if !ok || promptStr == "" {
+				logger.Error("prompt field is not a valid string")
+				httpError(ctx, w, http.StatusBadRequest)
+				return
+			}
+			logger.Info("detected prompt tokenization request")
+			messages = []map[string]any{
+				{"role": "user", "content": promptStr},
+			}
+			modified = true
+
+		default:
+			logger.Error("request must contain 'messages', 'input', or 'prompt' field")
 			httpError(ctx, w, http.StatusBadRequest)
 			return
 		}
 
-		// Check if messages need conversion from Responses to Chat Completions format
-		// (for cases where messages field exists but contains Responses-format messages)
-		messages := req.Messages
-		needsConversion := false
-		if len(messages) > 0 {
-			messages, needsConversion = checkMessagesFormat(messages, logger)
-		}
-		if needsConversion {
-			logger.Info("converting messages from Responses to Chat Completions format")
-			convertedMessages, err := convertMessagesToChatFormat(messages, map[string]any{"instructions": ""}, logger)
-			if err != nil {
-				logger.Error("failed to convert messages", slog.Any("error", err))
-				httpError(ctx, w, http.StatusBadRequest)
-				return
-			}
-			req.Messages = convertedMessages
-
-			// Convert tools from Responses format to Chat Completions format
-			if len(req.Tools) > 0 {
-				chatTools := make([]map[string]any, 0, len(req.Tools))
-				for _, tool := range req.Tools {
-					toolMap, ok := tool.(map[string]any)
-					if !ok {
-						continue
-					}
-					toolType, _ := toolMap["type"].(string)
-					if toolType == "function" {
-						// Responses: {type, name, description, parameters, strict}
-						// Chat Completions: {type: "function", function: {name, description, parameters, strict}}
-						funcDef := map[string]any{}
-						if name, ok := toolMap["name"].(string); ok {
-							funcDef["name"] = name
-						}
-						if desc, ok := toolMap["description"].(string); ok {
-							funcDef["description"] = desc
-						}
-						if params, ok := toolMap["parameters"]; ok {
-							funcDef["parameters"] = params
-						}
-						if strict, ok := toolMap["strict"]; ok {
-							funcDef["strict"] = strict
-						}
-						chatTools = append(chatTools, map[string]any{
-							"type":     "function",
-							"function": funcDef,
-						})
-					}
-					// Other tool types (web_search, file_search, etc.) are not supported by Chat Completions
-				}
-				if len(chatTools) > 0 {
-					// Convert []map[string]any to []any for assignment
-					toolsAsAny := make([]any, len(chatTools))
-					for i, t := range chatTools {
-						toolsAsAny[i] = t
-					}
-					req.Tools = toolsAsAny
-				}
-			}
+		if len(messages) == 0 {
+			logger.Error("no messages could be derived from request")
+			httpError(ctx, w, http.StatusBadRequest)
+			return
 		}
 
-		// Build request to forward to vLLM
+		// Build the forward request for vLLM
 		forwardReq := map[string]any{
 			"model":    servedModel,
-			"messages": req.Messages,
+			"messages": messages,
 		}
-		if req.AddGenerationPrompt {
-			forwardReq["add_generation_prompt"] = req.AddGenerationPrompt
+		// Carry over tokenize-specific options
+		if v, ok := reqData["add_generation_prompt"]; ok {
+			forwardReq["add_generation_prompt"] = v
 		}
-		if req.ReturnTokenStrings {
-			forwardReq["return_token_strs"] = req.ReturnTokenStrings
+		if v, ok := reqData["return_token_strs"]; ok {
+			forwardReq["return_token_strs"] = v
 		}
-		if len(req.ChatTemplateKwargs) > 0 {
-			forwardReq["chat_template_kwargs"] = req.ChatTemplateKwargs
+		if v, ok := reqData["chat_template_kwargs"]; ok {
+			forwardReq["chat_template_kwargs"] = v
 		}
-		if len(req.Tools) > 0 {
-			forwardReq["tools"] = req.Tools
+		if len(tools) > 0 {
+			forwardReq["tools"] = tools
 		}
 
 		// Marshal request body
@@ -222,8 +133,9 @@ func tokenize(httpCli *http.Client, target *url.URL,
 
 		logger.Debug("forwarding tokenize request to backend", slog.String("body", string(requestBody)))
 
-		// Track modified requests
-		modifiedRequests.Add(1)
+		if modified {
+			modifiedRequests.Add(1)
+		}
 
 		// Prepare outgoing request
 		outreq := r.Clone(ctx)
@@ -241,14 +153,12 @@ func tokenize(httpCli *http.Client, target *url.URL,
 		}
 		defer outResp.Body.Close()
 
-		// Copy response headers
+		// Copy response headers and body
 		for header, values := range outResp.Header {
 			for _, value := range values {
 				w.Header().Add(header, value)
 			}
 		}
-
-		// Write response
 		w.WriteHeader(outResp.StatusCode)
 		if _, err = io.Copy(w, outResp.Body); err != nil {
 			logger.Error("failed to write response", slog.String("error", err.Error()))
@@ -256,98 +166,50 @@ func tokenize(httpCli *http.Client, target *url.URL,
 	}
 }
 
-// checkMessagesFormat checks if messages are in Responses API format or Chat Completions format
-// Returns the messages array and a boolean indicating if conversion is needed
-func checkMessagesFormat(messagesAny any, logger *slog.Logger) ([]any, bool) {
-	messages, ok := messagesAny.([]any)
-	if !ok {
-		logger.Warn("messages is not an array")
-		return nil, false
-	}
-
-	if len(messages) == 0 {
-		return messages, false
-	}
-
-	// Check the first message to determine format
-	// Chat Completions format: {role: "user"|"assistant"|"system"|"tool", content: ...}
-	// Responses format: {type: "message"|"function_call_output", role: ..., content: ...}
-	firstMsg, ok := messages[0].(map[string]any)
-	if !ok {
-		return messages, false
-	}
-
-	// If message has "type" field, it's likely Responses API format
-	if _, hasType := firstMsg["type"]; hasType {
-		logger.Debug("detected Responses API format messages (has 'type' field)")
-		return messages, true
-	}
-
-	// Check for Responses API specific fields
-	if _, hasCallID := firstMsg["call_id"]; hasCallID {
-		logger.Debug("detected Responses API format messages (has 'call_id' field)")
-		return messages, true
-	}
-
-	logger.Debug("detected Chat Completions format messages")
-	return messages, false
-}
-
-// convertMessagesToChatFormat converts messages from Responses API format to Chat Completions format
-func convertMessagesToChatFormat(messages []any, reqData map[string]any, logger *slog.Logger) ([]any, error) {
-	var chatMessages []any
-
-	// Check if instructions field exists (Responses API)
-	if instr, ok := reqData["instructions"].(string); ok && instr != "" {
-		chatMessages = append(chatMessages, map[string]any{
-			"role":    "system",
-			"content": instr,
-		})
-	}
-
-	for _, msgAny := range messages {
+// normalizeChatMessages processes Chat Completions messages, normalizing content parts
+// (e.g. converting Responses API content part types like input_text to Chat format).
+// This handles the case where a caller sends messages in Chat Completions structure
+// but with mixed content part formats.
+func normalizeChatMessages(rawMessages []any, logger *slog.Logger) []map[string]any {
+	messages := make([]map[string]any, 0, len(rawMessages))
+	for _, msgAny := range rawMessages {
 		msgMap, ok := msgAny.(map[string]any)
 		if !ok {
 			continue
 		}
+		role, _ := msgMap["role"].(string)
+		content := msgMap["content"]
 
-		msgType, _ := msgMap["type"].(string)
+		// Normalize content parts if present as array
+		if contentArray, ok := content.([]any); ok {
+			content = convertContentPartsToChatFormat(contentArray, logger)
+		}
 
-		switch msgType {
-		case "message", "":
-			// Regular message in Responses format
-			role, _ := msgMap["role"].(string)
-			if role == "" {
-				role = "user"
-			}
-			content := msgMap["content"]
+		msg := map[string]any{
+			"role":    role,
+			"content": content,
+		}
+		// Preserve tool_call_id for tool role messages
+		if toolCallID, ok := msgMap["tool_call_id"].(string); ok {
+			msg["tool_call_id"] = toolCallID
+		}
+		// Preserve tool_calls for assistant messages
+		if toolCalls, ok := msgMap["tool_calls"]; ok {
+			msg["tool_calls"] = toolCalls
+		}
+		messages = append(messages, msg)
+	}
+	return messages
+}
 
-			// Convert content if it's an array of parts
-			if contentArray, ok := content.([]any); ok {
-				content = convertContentPartsToChatFormat(contentArray, logger)
-			}
-
-			chatMessages = append(chatMessages, map[string]any{
-				"role":    role,
-				"content": content,
-			})
-
-		case "function_call_output":
-			// Tool call result
-			callID, _ := msgMap["call_id"].(string)
-			output, _ := msgMap["output"].(string)
-
-			chatMessages = append(chatMessages, map[string]any{
-				"role":         "tool",
-				"tool_call_id": callID,
-				"content":      output,
-			})
-
-		default:
-			// Pass through other message types as-is
-			chatMessages = append(chatMessages, msgMap)
+// passThroughTools converts []any to []map[string]any, passing tools through as-is.
+// Used for Chat Completions format tools that are already in the correct structure.
+func passThroughTools(rawTools []any) []map[string]any {
+	tools := make([]map[string]any, 0, len(rawTools))
+	for _, t := range rawTools {
+		if toolMap, ok := t.(map[string]any); ok {
+			tools = append(tools, toolMap)
 		}
 	}
-
-	return chatMessages, nil
+	return tools
 }

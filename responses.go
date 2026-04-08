@@ -241,37 +241,7 @@ func convertResponsesToChat(reqData map[string]any, logger *slog.Logger) (map[st
 
 	// Convert tools from Responses format to Chat Completions format
 	if tools, ok := reqData["tools"].([]any); ok && len(tools) > 0 {
-		chatTools := make([]map[string]any, 0, len(tools))
-		for _, tool := range tools {
-			toolMap, ok := tool.(map[string]any)
-			if !ok {
-				continue
-			}
-			toolType, _ := toolMap["type"].(string)
-			if toolType == "function" {
-				// Responses: {type, name, description, parameters, strict}
-				// Chat Completions: {type: "function", function: {name, description, parameters, strict}}
-				funcDef := map[string]any{}
-				if name, ok := toolMap["name"].(string); ok {
-					funcDef["name"] = name
-				}
-				if desc, ok := toolMap["description"].(string); ok {
-					funcDef["description"] = desc
-				}
-				if params, ok := toolMap["parameters"]; ok {
-					funcDef["parameters"] = params
-				}
-				if strict, ok := toolMap["strict"]; ok {
-					funcDef["strict"] = strict
-				}
-				chatTools = append(chatTools, map[string]any{
-					"type":     "function",
-					"function": funcDef,
-				})
-			}
-			// Other tool types (web_search, file_search, etc.) are not supported by Chat Completions
-		}
-		if len(chatTools) > 0 {
+		if chatTools := convertToolsToChat(tools); len(chatTools) > 0 {
 			chatData["tools"] = chatTools
 		}
 	}
@@ -368,7 +338,44 @@ func convertInputToMessages(input any, instructions any, logger *slog.Logger) ([
 	return messages, nil
 }
 
-// convertContentPartsToChatFormat converts Responses content parts to Chat format
+// convertToolsToChat converts tools from Responses API format to Chat Completions format.
+// Responses: {type: "function", name, description, parameters, strict}
+// Chat Completions: {type: "function", function: {name, description, parameters, strict}}
+func convertToolsToChat(tools []any) []map[string]any {
+	chatTools := make([]map[string]any, 0, len(tools))
+	for _, tool := range tools {
+		toolMap, ok := tool.(map[string]any)
+		if !ok {
+			continue
+		}
+		toolType, _ := toolMap["type"].(string)
+		if toolType != "function" {
+			// Other tool types (web_search, file_search, etc.) are not supported by Chat Completions
+			continue
+		}
+		funcDef := map[string]any{}
+		if name, ok := toolMap["name"].(string); ok {
+			funcDef["name"] = name
+		}
+		if desc, ok := toolMap["description"].(string); ok {
+			funcDef["description"] = desc
+		}
+		if params, ok := toolMap["parameters"]; ok {
+			funcDef["parameters"] = params
+		}
+		if strict, ok := toolMap["strict"]; ok {
+			funcDef["strict"] = strict
+		}
+		chatTools = append(chatTools, map[string]any{
+			"type":     "function",
+			"function": funcDef,
+		})
+	}
+	return chatTools
+}
+
+// convertContentPartsToChatFormat converts content parts from various formats to Chat Completions format
+// Handles: Responses API (input_text, input_image), Chat Completions (text, image_url), and vLLM native formats
 func convertContentPartsToChatFormat(parts []any, logger *slog.Logger) []map[string]any {
 	var chatParts []map[string]any
 
@@ -381,6 +388,7 @@ func convertContentPartsToChatFormat(parts []any, logger *slog.Logger) []map[str
 		partType, _ := partMap["type"].(string)
 
 		switch partType {
+		// Responses API format
 		case "input_text":
 			text, _ := partMap["text"].(string)
 			chatParts = append(chatParts, map[string]any{
@@ -402,6 +410,48 @@ func convertContentPartsToChatFormat(parts []any, logger *slog.Logger) []map[str
 				chatPart["image_url"].(map[string]any)["detail"] = detail
 			}
 			chatParts = append(chatParts, chatPart)
+
+		// Chat Completions / vLLM native format - ensure correct structure
+		case "text":
+			text, _ := partMap["text"].(string)
+			chatParts = append(chatParts, map[string]any{
+				"type": "text",
+				"text": text,
+			})
+
+		case "image_url":
+			// Handle both formats: {"image_url": "string"} and {"image_url": {"url": "string"}}
+			imageURLData := partMap["image_url"]
+			var imageURL string
+			var detail string
+
+			if urlMap, ok := imageURLData.(map[string]any); ok {
+				// Nested format: {"image_url": {"url": "...", "detail": "..."}}
+				if url, ok := urlMap["url"].(string); ok {
+					imageURL = url
+				}
+				if d, ok := urlMap["detail"].(string); ok {
+					detail = d
+				}
+			} else if url, ok := imageURLData.(string); ok {
+				// Flat format: {"image_url": "..."}
+				imageURL = url
+			}
+
+			chatPart := map[string]any{
+				"type": "image_url",
+				"image_url": map[string]any{
+					"url": imageURL,
+				},
+			}
+			if detail != "" {
+				chatPart["image_url"].(map[string]any)["detail"] = detail
+			}
+			chatParts = append(chatParts, chatPart)
+
+		default:
+			// Pass through unknown types as-is, but ensure structure is correct for vLLM
+			chatParts = append(chatParts, partMap)
 		}
 	}
 
@@ -1036,10 +1086,10 @@ func convertChatSSEEventToResponses(chatEvent map[string]any, responseID, itemID
 
 			// Add reasoning content part
 			events = append(events, map[string]any{
-				"type":            "response.reasoning_part.added",
-				"item_id":         *reasoningItemID,
-				"output_index":    *outputIndex - 1,
-				"content_index":   0,
+				"type":          "response.reasoning_part.added",
+				"item_id":       *reasoningItemID,
+				"output_index":  *outputIndex - 1,
+				"content_index": 0,
 				"part": map[string]any{
 					"type": "reasoning_text",
 					"text": "",
