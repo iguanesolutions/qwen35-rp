@@ -264,6 +264,30 @@ func convertResponsesToChat(reqData map[string]any, logger *slog.Logger) (map[st
 	if maxTokens, ok := reqData["max_output_tokens"]; ok {
 		chatData["max_tokens"] = maxTokens
 	}
+	if stop, ok := reqData["stop"]; ok {
+		chatData["stop"] = stop
+	}
+	if freqPenalty, ok := reqData["frequency_penalty"]; ok {
+		chatData["frequency_penalty"] = freqPenalty
+	}
+	if presPenalty, ok := reqData["presence_penalty"]; ok {
+		chatData["presence_penalty"] = presPenalty
+	}
+	if seed, ok := reqData["seed"]; ok {
+		chatData["seed"] = seed
+	}
+	if n, ok := reqData["n"]; ok {
+		chatData["n"] = n
+	}
+	if logprobs, ok := reqData["logprobs"]; ok {
+		chatData["logprobs"] = logprobs
+	}
+	if topLogprobs, ok := reqData["top_logprobs"]; ok {
+		chatData["top_logprobs"] = topLogprobs
+	}
+	if parallelToolCalls, ok := reqData["parallel_tool_calls"]; ok {
+		chatData["parallel_tool_calls"] = parallelToolCalls
+	}
 
 	// Convert tools from Responses format to Chat Completions format
 	if tools, ok := reqData["tools"].([]any); ok && len(tools) > 0 {
