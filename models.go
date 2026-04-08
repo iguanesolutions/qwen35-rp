@@ -54,6 +54,7 @@ func models(httpCli *http.Client, target *url.URL, servedModel, thinkingGeneral,
 		data, ok := modelsResp["data"].([]any)
 		if !ok || len(data) == 0 {
 			logger.Warn("no models in backend response, passing through")
+			copyHeaders(w, resp)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(resp.StatusCode)
 			if _, err := w.Write(body); err != nil {
@@ -117,6 +118,7 @@ func models(httpCli *http.Client, target *url.URL, servedModel, thinkingGeneral,
 		}
 
 		// Write response
+		copyHeaders(w, resp)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.StatusCode)
 		if _, err = w.Write(enrichedBody); err != nil {
