@@ -66,12 +66,12 @@ func main() {
 			cfg.InstructGeneralModel, cfg.InstructReasoningModel,
 		),
 	))
-	http.HandleFunc("POST /v1/responses", httplogger.LogFunc(
-		responses(httpClient, backendURL,
-			cfg.ServedModelName, cfg.ThinkingGeneralModel, cfg.ThinkingCodingModel,
-			cfg.InstructGeneralModel, cfg.InstructReasoningModel, cfg.EnforceSamplingParams,
-		),
-	))
+	http.HandleFunc("POST /v1/responses", httplogger.LogFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w,
+			"responses endpoint on vLLM does not support kwargs to activate Qwen profiles",
+			http.StatusNotImplemented,
+		)
+	}))
 	http.HandleFunc("POST /v1/chat/completions", httplogger.LogFunc(
 		transform(httpClient, backendURL,
 			cfg.ServedModelName, cfg.ThinkingGeneralModel, cfg.ThinkingCodingModel,
