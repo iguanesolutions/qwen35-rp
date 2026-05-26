@@ -1,6 +1,6 @@
 # qwen35-rp
 
-Qwen 3.5 Reverse Proxy is a lightweight HTTP reverse proxy that automatically adjusts sampling parameters (temperature, top_p, etc.) and thinking mode based on one of four predefined profiles. It sits between your application and the backend LLM server serving Qwen 3.5 (e.g., vLLM). It also provides a `/tokenize` endpoint for tokenizing messages using the backend's tokenizer.
+Qwen 3.5 Reverse Proxy is a lightweight HTTP reverse proxy that automatically adjusts sampling parameters (temperature, top_p, etc.) and thinking mode based on one of four predefined profiles. It sits between your application and the backend LLM server serving Qwen 3.5 (e.g., vLLM). It also provides a `/tokenize` endpoint that replaces virtual model names with the backend model name before forwarding to vLLM.
 
 ## Core Functionality
 
@@ -18,8 +18,7 @@ This proxy's primary purpose is to:
 4. **Rewrite the model name** to the actual backend model name (e.g., `Qwen/Qwen3.5-397B-A17B-FP8`) before forwarding to vLLM
 5. **Fix vLLM response bugs** where non-thinking, non-streaming responses incorrectly place content in `reasoning_content` or `reasoning` fields instead of `content`
 6. **Enrich `/v1/models` endpoint** by fetching backend models and exposing 4 virtual models with the same metadata (permissions, max_model_len, etc.)
-7. **Provide OpenAI Responses API compatibility** (`/v1/responses`) by converting requests to Chat Completions format and responses back to Responses format. This conversion is necessary because only vLLM's Chat Completions endpoint supports `chat_template_kwargs`, which is required to control Qwen's thinking mode (`enable_thinking=true/false`)
-8. **Provide a `/tokenize` endpoint** for tokenizing messages and counting tokens before making actual generation requests
+7. **Provide a `/tokenize` endpoint** that replaces virtual model names with the backend model name before forwarding to vLLM's `/tokenize`
 
 ## Installation
 
@@ -77,59 +76,33 @@ By default, the proxy only sets sampling parameters if they are not already pres
 ## Request Routing
 
 - **`GET /v1/models`**: Enriched (fetches backend models, validates served model, exposes 4 virtual models)
-- **`POST /v1/responses`**: Converted (Responses API → Chat Completions, with full response conversion)
+- **`POST /v1/responses`**: Returns HTTP 501 Not Implemented by design (vLLM's Responses API doesn't support `chat_template_kwargs` needed to activate thinking mode)
 - **`POST /v1/chat/completions`**: Transformed (sampling params + thinking mode applied)
 - **`POST /v1/completions`**: Model name validated and swapped (no sampling params or thinking mode — raw prompt completions bypass the chat template)
-- **`POST /tokenize`**: Tokenization (prompt passthrough or messages with content/tools normalization)
+- **`POST /tokenize`**: Replaces virtual model names with backend model name and forwards to vLLM's `/tokenize`
 - **All other paths**: Passed through unchanged to the backend
 
-## Responses API Support
+## Responses API
 
-The proxy provides full compatibility with OpenAI's [Responses API](https://platform.openai.com/docs/api-reference/responses), converting requests and responses to/from the Chat Completions API format.
-
-**Why convert instead of forwarding to vLLM's `/v1/responses` endpoint?**
-
-Only vLLM's Chat Completions endpoint supports `chat_template_kwargs`, which is required to control Qwen's thinking mode (`enable_thinking=true/false`). By converting to Chat Completions, we can properly configure thinking mode based on the selected profile.
-
-### Supported Features
-
-| Feature | Streaming | Non-Streaming |
-|---------|-----------|---------------|
-| Text generation | ✅ | ✅ |
-| Reasoning/thinking content | ✅ | ✅ |
-| Function/tool calls | ✅ | ✅ |
-| Usage tracking (billing) | ✅ | ✅ |
-| System instructions | ✅ | ✅ |
-| Multimodal input (images) | ✅ | ✅ |
-| Max output tokens / truncation | ✅ | ✅ |
-
-### Streaming Events
-
-The proxy emits standard Responses API streaming events:
-
-- `response.created`, `response.in_progress`
-- `response.output_item.added`, `response.output_item.done`
-- `response.content_part.added`, `response.content_part.done`
-- `response.output_text.delta`, `response.output_text.done`
-- `response.reasoning_text.delta`, `response.reasoning_text.done` (thinking mode)
-- `response.function_call_arguments.delta`, `response.function_call_arguments.done` (tool calls)
-- `response.completed`
+The `/v1/responses` endpoint returns HTTP 501 Not Implemented by design. vLLM's Responses API endpoint does not support `chat_template_kwargs`, which is required to control Qwen's thinking mode (`enable_thinking=true` or `false`). Without this, the proxy cannot apply the four predefined profiles that adjust sampling parameters and thinking behavior. Use the Chat Completions API (`/v1/chat/completions`) instead.
 
 ### vLLM Backend Requirements
 
-For full functionality, the vLLM backend should be started with the following flags:
+For full functionality with thinking mode and tool calls using the Chat Completions API, the vLLM backend should be started with the following flags:
 
 ```bash
 --reasoning-parser=qwen3                                  # Required for thinking/reasoning mode
 --enable-auto-tool-choice --tool-call-parser=qwen3_coder  # Required for tool/function calls
 ```
 
+**Note**: These flags are only needed when using Chat Completions API (`/v1/chat/completions`). The Responses API (`/v1/responses`) is not yet supported.
+
 ## Tokenize API
 
-The proxy provides a `/tokenize` endpoint that forwards tokenization requests to vLLM's `/tokenize`. Two modes:
+The proxy provides a `/tokenize` endpoint that forwards tokenization requests to vLLM's `/tokenize`. The proxy replaces virtual model names with the backend served model name, then forwards the request body unchanged. Two modes:
 
 - **`{"prompt": "..."}`** — raw text tokenization, forwarded as-is. No chat template is applied.
-- **`{"messages": [...], "tools": [...]}`** — vLLM applies the model's chat template (`apply_chat_template`) then tokenizes the result. Individual messages and tools can use either Chat Completions or Responses API formats (e.g. `input_text` content parts, flat tool definitions); the proxy normalizes everything to Chat Completions format before forwarding, since that's what `apply_chat_template` expects. Also supports `add_generation_prompt`, `return_token_strs`, and `chat_template_kwargs`.
+- **`{"messages": [...], "tools": [...]}`** — vLLM applies the model's chat template (`apply_chat_template`) then tokenizes the result. Messages and tools must be in Chat Completions API format (same as transformers `apply_chat_template`): a list of dictionaries with `role` and `content` keys.
 
 ## Health Check
 
